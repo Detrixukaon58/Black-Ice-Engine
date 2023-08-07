@@ -2,7 +2,7 @@ use std::any::TypeId;
 use std::collections::HashMap;
 use std::any::Any;
 use std::string;
-use crate::common::*;
+use crate::common::{*, mesh::Mesh};
 use std::sync::{Arc, Mutex};
 use ash::extensions::ext::DebugUtils;
 use sdl2::*;
@@ -218,17 +218,26 @@ impl Game {
 
     pub fn init(&'static mut self) {
         // create a window
-        #[cfg(feature = "vulkan")]unsafe{self.init_vulkan();}
-    }
-
-    #[cfg(feature = "vulkan")]
-    unsafe fn init_vulkan(&'static mut self) {
+        let mut event_pump = self.sdl.event_pump().expect("Failed to load event pump!");
         let renderJoinHandle = self.RENDER_SYS.init();
         
+        self.STATUS = SatusCode::RUNNING;
+        // here we loop for the events
+        'running: loop {
+            for event in event_pump.poll_iter() {
+                match event {
+                    event::Event::Quit {..} =>  break 'running,
+                    _ => continue
+                }
+            }
 
+            
+        }
+        self.STATUS = SatusCode::CLOSE;
         renderJoinHandle.join();
         
     }
+
 
 }
 

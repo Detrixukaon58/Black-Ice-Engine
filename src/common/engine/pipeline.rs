@@ -44,10 +44,12 @@ pub struct RenderPipelineSystem {
     threadCount: usize,
     threads: Dict<usize, Arc<Mutex<Threader>>>,
     device: Option<vk::PhysicalDevice>,
+
 }
 
 impl RenderPipelineSystem{
     pub fn resgister_pipeline(&mut self, params: PipelineParams){
+
         let pipeline = Pipeline {
             id: self.counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             name: params.name.clone(),
@@ -59,10 +61,12 @@ impl RenderPipelineSystem{
             self.threadCount = params.layer;
         }
         self.pipelines.push(pipeline);
+        
     }
 
     pub fn register_mesh(&mut self, id: i32, mesh: Arc<Mutex<Mesh>>){
-        for p in &mut self.pipelines {
+
+        for p in &mut *self.pipelines {
             let mut pipeline = p;
             if(pipeline.id == id){
                 let m = mesh.clone();
@@ -70,6 +74,7 @@ impl RenderPipelineSystem{
                 return;
             }
         }
+
     }
 
     pub fn new() -> RenderPipelineSystem {
@@ -100,6 +105,7 @@ impl RenderPipelineSystem{
             //let mut threads: Box<Dict<usize, Arc<Mutex<Threader>>>> = Box::new(Dict::<usize, Arc<Mutex<Threader>>>::new());
             
             while (!GAME.isExit()) {
+
                 for p in &self.pipelines{
                     let pipeline = p;
 
@@ -110,8 +116,10 @@ impl RenderPipelineSystem{
                     }
                     b.start(|| pipeline.render());
                 }
+
+                std::thread::sleep(std::time::Duration::from_millis(5));
             }
-        
+            println!("Closing thread!!");
         }
         0
     }

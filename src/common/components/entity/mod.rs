@@ -1,4 +1,5 @@
 mod meshcomponent;
+pub mod entity_system;
 
 use std::any::TypeId;
 
