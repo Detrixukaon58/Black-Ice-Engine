@@ -2,7 +2,7 @@ use std::any::TypeId;
 use std::collections::HashMap;
 use std::any::Any;
 use std::string;
-use crate::common::{*, mesh::Mesh};
+use crate::common::{*, mesh::Mesh, components::{component_system::ComponentSystem, entity::entity_system::EntitySystem}};
 use std::sync::{Arc, Mutex};
 use ash::extensions::ext::DebugUtils;
 use sdl2::*;
@@ -178,6 +178,7 @@ pub struct Game {
     pub gameName: Arc<Mutex<String>>,
     pub REGISTRAR: Box<Registry>,
     pub RENDER_SYS: Box<RenderPipelineSystem>,
+    pub ENTITY_SYS: Box<EntitySystem>,
     pub STATUS: SatusCode,
     pub sdl: sdl2::Sdl,
     pub window: sdl2::video::Window,
@@ -205,10 +206,13 @@ impl Game {
             .expect("Failed to build window!")
         ;
 
+        let ent_sys = Box::new(EntitySystem::new());
+
         Game { 
             gameName: Arc::new(Mutex::new(String::from("Game Name"))), 
             REGISTRAR: reg, 
             RENDER_SYS: renderSys, 
+            ENTITY_SYS: ent_sys,
             STATUS: SatusCode::INITIALIZE,
             sdl: sdl,
             window: window,
@@ -235,7 +239,6 @@ impl Game {
         }
         self.STATUS = SatusCode::CLOSE;
         renderJoinHandle.join();
-        
     }
 
 
