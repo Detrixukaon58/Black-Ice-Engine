@@ -1,6 +1,6 @@
 // TODO: Make an entity registration system to allow for components to be registered to an entity
 
-use std::{any::*, thread::JoinHandle, collections::*};
+use std::{any::*, thread::JoinHandle, collections::*, sync::*, future::*, pin::*};
 
 use crate::common::{engine::gamesys::*, vertex::*, angles::*, components::component_system::*};
 
@@ -49,7 +49,9 @@ mod event{
     use std::collections::HashMap;
     use std::any::*;
 
-    use crate::common::engine::gamesys::BaseToAny;
+    use crate::common::{engine::gamesys::BaseToAny, vertex::*};
+
+    use super::*;
 
     pub enum EventCode {
         INIT,
@@ -71,6 +73,9 @@ mod event{
     enum EventDataValue {
         String(String),
         Integer(i32),
+        Vector3(Vec3),
+        EntityID(EntityID),
+
     }
 
     pub struct EventData {
@@ -90,6 +95,7 @@ mod event{
 pub struct EntitySystem {
     entities: Box<Vec<ComponentRef<Entity>>>,
     event: Option<event::Event>,
+    system_status: Arc<Mutex<StatusCode>>,
 }
 
 
@@ -100,18 +106,25 @@ impl EntitySystem {
         EntitySystem { 
             entities: entities,
             event: None,
+            system_status: Arc::new(Mutex::new(StatusCode::INITIALIZE)),
+
         }
     }
 
-    pub fn init(&'static self) -> JoinHandle<i32>{
-        std::thread::Builder::new()
-            .name(String::from("Entity System Thread"))
-            .spawn(|| {self.processing()})
-            .expect("Failed to spawn Entity System Thread!!")
+    pub fn init<'a>(this: Arc<Mutex<Self>>){
+        unsafe{
+            println!("Spawned Entity System!!");
+            Self::processing(&mut this.lock().unwrap());
+        }
     }
 
-    pub fn processing(&'static self) -> i32 {
+    pub unsafe fn processing<'a>(this: &'a mut Self) -> i32 {
 
+        while !GAME.isExit() {
+            
+
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
 
         0
     }

@@ -1,10 +1,11 @@
-use std::any::TypeId;
+use std::{any::TypeId, future};
 use std::collections::HashMap;
 use std::any::Any;
 use std::string;
 use crate::common::{*, mesh::Mesh, components::{component_system::ComponentSystem, entity::entity_system::EntitySystem}};
 use std::sync::{Arc, Mutex};
 use ash::extensions::ext::DebugUtils;
+use futures::join;
 use sdl2::*;
 
 use once_cell::sync::Lazy;
@@ -165,8 +166,8 @@ trait Initialiser {
     fn init(&mut self);
 }
 
-#[derive(PartialEq)]
-pub enum SatusCode{
+#[derive(PartialEq, Clone)]
+pub enum StatusCode{
     RUNNING,
     CLOSE,
     INITIALIZE,
@@ -176,10 +177,10 @@ pub enum SatusCode{
 pub struct Game {
 
     pub gameName: Arc<Mutex<String>>,
-    pub REGISTRAR: Box<Registry>,
-    pub RENDER_SYS: Box<RenderPipelineSystem>,
-    pub ENTITY_SYS: Box<EntitySystem>,
-    pub STATUS: SatusCode,
+    pub REGISTRAR: components::component_system::ComponentRef<Registry>,
+    pub RENDER_SYS: components::component_system::ComponentRef<RenderPipelineSystem>,
+    pub ENTITY_SYS: components::component_system::ComponentRef<EntitySystem>,
+    pub STATUS: Arc<Mutex<StatusCode>>,
     pub sdl: sdl2::Sdl,
     pub window: sdl2::video::Window,
     pub video: sdl2::VideoSubsystem,
@@ -187,14 +188,14 @@ pub struct Game {
 
 impl Game {
     pub fn isExit(&self) -> bool {
-        self.STATUS == SatusCode::CLOSE
+        *self.STATUS.lock().unwrap() == StatusCode::CLOSE
     }
 
     pub fn new() -> Game{
-        let reg = Box::new(Registry {reg: Lazy::new(
+        let reg = components::component_system::ComponentRef_new(Registry {reg: Lazy::new(
             || {HashMap::<Box<&str>,Box<Register>>::new()}
         )});
-        let renderSys = Box::new(RenderPipelineSystem::new());
+        let renderSys = components::component_system::ComponentRef_new(RenderPipelineSystem::new());
 
         let sdl = init().expect("Failed to initialise SDL!!");
         let video = sdl.video().expect("Failed to get video.");
@@ -206,14 +207,14 @@ impl Game {
             .expect("Failed to build window!")
         ;
 
-        let ent_sys = Box::new(EntitySystem::new());
+        let ent_sys = components::component_system::ComponentRef_new(EntitySystem::new());
 
         Game { 
             gameName: Arc::new(Mutex::new(String::from("Game Name"))), 
             REGISTRAR: reg, 
             RENDER_SYS: renderSys, 
             ENTITY_SYS: ent_sys,
-            STATUS: SatusCode::INITIALIZE,
+            STATUS: Arc::new(Mutex::new(StatusCode::INITIALIZE)),
             sdl: sdl,
             window: window,
             video: video,
@@ -221,24 +222,43 @@ impl Game {
     }
 
     pub fn init(&'static mut self) {
-        // create a window
-        let mut event_pump = self.sdl.event_pump().expect("Failed to load event pump!");
-        let renderJoinHandle = self.RENDER_SYS.init();
-        
-        self.STATUS = SatusCode::RUNNING;
-        // here we loop for the events
-        'running: loop {
-            for event in event_pump.poll_iter() {
-                match event {
-                    event::Event::Quit {..} =>  break 'running,
-                    _ => continue
+        // Set up thread pool
+
+        let runner = async{
+
+            let mut event_pump = self.sdl.event_pump().expect("Failed to load event pump!");
+            let p_render_sys = self.RENDER_SYS.clone();
+            let p_entity_sys = self.ENTITY_SYS.clone();
+            let renderJoinHandle = std::thread::spawn(|| {RenderPipelineSystem::init(p_render_sys)});
+            let entity_Join_Handle = std::thread::spawn(|| {EntitySystem::init(p_entity_sys)});
+            
+            
+            // here we loop for the events
+            'running: loop {
+                for event in event_pump.poll_iter() {
+                    match event {
+                        event::Event::Quit {..} =>  {
+                            self.set_status(StatusCode::CLOSE);
+                            break 'running;
+                        }
+                        _ => continue
+                    }
                 }
+
+                
             }
 
+            renderJoinHandle.join();
+            entity_Join_Handle.join();
             
-        }
-        self.STATUS = SatusCode::CLOSE;
-        renderJoinHandle.join();
+        };
+
+        futures::executor::block_on(runner);
+        
+    }
+
+    fn set_status(&mut self, status: StatusCode){
+        *self.STATUS.lock().unwrap() = status;
     }
 
 

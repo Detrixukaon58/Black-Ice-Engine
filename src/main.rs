@@ -1,5 +1,6 @@
 
-use std::{mem::{size_of_val, size_of}, str::SplitWhitespace, ffi::{CString, OsString}, any::TypeId, fs};
+use futures::*;
+use std::{mem::{size_of_val, size_of}, str::SplitWhitespace, ffi::{CString, OsString}, any::TypeId, fs, future::*};
 use bytemuck::try_cast_ref;
 #[cfg(feature = "opengl")] use ogl33::*;
 pub mod common;
@@ -367,8 +368,9 @@ fn oldMain() {
     }
 }
 
+
 fn main(){
     unsafe{
-    GAME.init();
+        GAME.init();
     }
 }

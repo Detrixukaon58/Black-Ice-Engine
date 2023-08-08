@@ -7,7 +7,7 @@ use crate::common::{vertex::*, transform::*, engine::gamesys::*};
 use crate::common::filesystem::files::*;
 use crate::common::{materials::*, *};
 
-
+// TODO: Add layer reference so that correct pipelines can get the correct meshes
 /// Type of resource
 #[derive(Clone)]
 pub struct Mesh {

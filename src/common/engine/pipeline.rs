@@ -5,7 +5,9 @@ use std::collections::HashMap;
 use std::ops::DerefMut;
 use std::sync::*;
 use std::sync::atomic::AtomicI32;
+use std::future::*;
 use sdl2::*;
+use async_trait::*;
 
 use crate::common::materials::BakeVulkan;
 use crate::common::mesh::*;
@@ -37,10 +39,12 @@ impl Pipeline {
     }
 }
 
+// TODO: Add mesh reference vector so that we don't reference meshes only in the pipeline
+// (Saves on memory and don't want to store multiple instances of meshes)
 pub struct RenderPipelineSystem {
-    pub pipelines: Vec<Pipeline>,
+    pub pipelines: Vec<Arc<Mutex<Pipeline>>>,
     counter: AtomicI32,
-    statusCode: gamesys::SatusCode,
+    system_status: Arc<Mutex<gamesys::StatusCode>>,
     threadCount: usize,
     threads: Dict<usize, Arc<Mutex<Threader>>>,
     device: Option<vk::PhysicalDevice>,
@@ -48,6 +52,7 @@ pub struct RenderPipelineSystem {
 }
 
 impl RenderPipelineSystem{
+    // TODO: Fix these so that it doesn't borrow self!!
     pub fn resgister_pipeline(&mut self, params: PipelineParams){
 
         let pipeline = Pipeline {
@@ -60,14 +65,14 @@ impl RenderPipelineSystem{
         if(self.threadCount < params.layer){
             self.threadCount = params.layer;
         }
-        self.pipelines.push(pipeline);
+        self.pipelines.push(Arc::new(Mutex::new(pipeline)));
         
     }
 
     pub fn register_mesh(&mut self, id: i32, mesh: Arc<Mutex<Mesh>>){
 
         for p in &mut *self.pipelines {
-            let mut pipeline = p;
+            let mut pipeline = p.lock().unwrap();
             if(pipeline.id == id){
                 let m = mesh.clone();
                 pipeline.register_mesh(m);
@@ -81,7 +86,7 @@ impl RenderPipelineSystem{
         let pipSys = RenderPipelineSystem {
             pipelines: Vec::new(),
             counter: AtomicI32::new(1),
-            statusCode: gamesys::SatusCode::RUNNING,
+            system_status: Arc::new(Mutex::new(gamesys::StatusCode::RUNNING)),
             threadCount: 0,
             threads: Dict::<usize, Arc<Mutex<Threader>>>::new(),
             device: None,
@@ -89,13 +94,13 @@ impl RenderPipelineSystem{
         return pipSys;
     }
 
-    fn processing(&'static mut self) -> i32{
+    pub fn processing<'a>(this: &'a mut Self) -> i32{
         unsafe{
             
             // Initialise pipeline stuff
-            #[cfg(feature = "vulkan")]self.init_vulkan();
-            #[cfg(feature = "opengl")]self.init_ogl();
-            #[cfg(feature = "gles")]self.init_gles();
+            #[cfg(feature = "vulkan")]RenderPipelineSystem::init_vulkan(this);
+            #[cfg(feature = "opengl")]RenderPipelineSystem::init_ogl(this);
+            #[cfg(feature = "gles")]RenderPipelineSystem::init_gles(this);
              // prebake step (only for when we have a better file system)
              // Create a new thread purely for baking and wait for this to finish
              // TODO: Implement better file system for storing shaders
@@ -106,15 +111,17 @@ impl RenderPipelineSystem{
             
             while (!GAME.isExit()) {
 
-                for p in &self.pipelines{
-                    let pipeline = p;
+                for p in &this.pipelines{
+                    let pipeline = p.lock().unwrap();
 
-                    let mut a = self.threads.get_or_insert(pipeline.layer, Arc::new(Mutex::new(Threader::new()))).unwrap();
-                    let mut b = a.lock().unwrap();
-                    if(b.isAlive()){
-                        b.stop();
-                    }
-                    b.start(|| pipeline.render());
+                    // let mut a = this.threads.get_or_insert(pipeline.layer, Arc::new(Mutex::new(Threader::new()))).unwrap();
+                    // let mut b = a.lock().unwrap();
+                    // if(b.isAlive()){
+                    //     b.stop();
+                    // }
+                    // b.start(|| {
+                        #[cfg(feature = "vulkan")]VulkanRender::render(p.clone());
+                    // });
                 }
 
                 std::thread::sleep(std::time::Duration::from_millis(5));
@@ -124,14 +131,14 @@ impl RenderPipelineSystem{
         0
     }
 
-    pub fn init(&'static mut self) -> std::thread::JoinHandle<i32> {
+    pub fn init<'a>(this: Arc<Mutex<Self>>){
         // Start thread
-        let thread = std::thread::Builder::new().spawn(|| {self.processing()});
-        return thread.ok().unwrap();
+        println!("Spawned Render Pipeline System");
+        Self::processing(&mut this.lock().unwrap());
     }
 
     #[cfg(feature = "vulkan")]
-    unsafe fn init_vulkan(&mut self)  {
+    unsafe fn init_vulkan(this:&mut Self)  {
         use winit::dpi::Pixel;
         
         unsafe fn checkDeviceSuitability(physical_device: &vk::PhysicalDevice, instance: &Instance) -> bool{
@@ -237,20 +244,24 @@ impl RenderPipelineSystem{
 
 
 }
+
+
 #[cfg(feature = "vulkan")]
 pub trait VulkanRender {
     fn init(&self) -> i32;
-    fn render(&self) -> i32;
+    fn render(th: Arc<Mutex<Self>>) -> i32;
 }
+
 #[cfg(feature = "opengl")]
 pub trait OGLRender {
     fn init(&self) -> i32;
-    fn render(&self) -> i32;
+    fn render(th: Arc<Mutex<Self>>) -> i32;
 }
+
 #[cfg(feature = "gles")]
 pub trait GLESRender {
     fn init(&self) -> i32;
-    fn render(&self) -> i32;
+    fn render(th: Arc<Mutex<Self>>) -> i32;
 }
 
 #[cfg(feature = "vulkan")]
@@ -259,13 +270,14 @@ impl VulkanRender for Pipeline {
         0
     }
 
-    fn render(&self) -> i32 {
+    fn render(th: Arc<Mutex<Self>>) -> i32 {
+        let this = th.lock().unwrap();
         // Rendering per mesh
         // First generate all shaders and vertex buffers
-        for m in &self.meshs {
+        for m in &this.meshs {
             let mut mesh = m.lock().unwrap();
             // first the shader, we must compile and generate a pipeline
-            let shader_modules = mesh.material.bake(self.device.clone());
+            let shader_modules = mesh.material.bake(this.device.clone());
             
             // Get vertex, index, texcoord buffers
             
@@ -273,3 +285,4 @@ impl VulkanRender for Pipeline {
         0
     }
 }
+
