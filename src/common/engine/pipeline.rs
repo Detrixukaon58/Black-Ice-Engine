@@ -53,25 +53,27 @@ pub struct RenderPipelineSystem {
 
 impl RenderPipelineSystem{
     // TODO: Fix these so that it doesn't borrow self!!
-    pub fn resgister_pipeline(&mut self, params: PipelineParams){
-
+    pub unsafe fn resgister_pipeline(params: PipelineParams){
+        let p_this = Game::get_render_sys().clone();
+        let mut this = p_this.lock().unwrap();
         let pipeline = Pipeline {
-            id: self.counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            id: this.counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             name: params.name.clone(),
             meshs: Vec::new(),
             layer: params.layer,
-            device: self.device.clone()
+            device: this.device.clone()
         };
-        if(self.threadCount < params.layer){
-            self.threadCount = params.layer;
+        if(this.threadCount < params.layer){
+            this.threadCount = params.layer;
         }
-        self.pipelines.push(Arc::new(Mutex::new(pipeline)));
+        this.pipelines.push(Arc::new(Mutex::new(pipeline)));
         
     }
 
-    pub fn register_mesh(&mut self, id: i32, mesh: Arc<Mutex<Mesh>>){
-
-        for p in &mut *self.pipelines {
+    pub unsafe fn register_mesh(id: i32, mesh: Arc<Mutex<Mesh>>){
+        let p_this = Game::get_render_sys().clone();
+        let mut this = p_this.lock().unwrap();
+        for p in &mut *this.pipelines {
             let mut pipeline = p.lock().unwrap();
             if(pipeline.id == id){
                 let m = mesh.clone();
@@ -109,7 +111,7 @@ impl RenderPipelineSystem{
             // first we setup threads for each layer
             //let mut threads: Box<Dict<usize, Arc<Mutex<Threader>>>> = Box::new(Dict::<usize, Arc<Mutex<Threader>>>::new());
             
-            while (!GAME.isExit()) {
+            while (!Game::isExit()) {
 
                 for p in &this.pipelines{
                     let pipeline = p.lock().unwrap();

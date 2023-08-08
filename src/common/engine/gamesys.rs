@@ -2,6 +2,8 @@ use std::{any::TypeId, future};
 use std::collections::HashMap;
 use std::any::Any;
 use std::string;
+use crate::common::angles::QuatConstructor;
+use crate::common::vertex::V3New;
 use crate::common::{*, mesh::Mesh, components::{component_system::ComponentSystem, entity::entity_system::EntitySystem}};
 use std::sync::{Arc, Mutex};
 use ash::extensions::ext::DebugUtils;
@@ -178,8 +180,8 @@ pub struct Game {
 
     pub gameName: Arc<Mutex<String>>,
     pub REGISTRAR: components::component_system::ComponentRef<Registry>,
-    pub RENDER_SYS: components::component_system::ComponentRef<RenderPipelineSystem>,
-    pub ENTITY_SYS: components::component_system::ComponentRef<EntitySystem>,
+    RENDER_SYS: components::component_system::ComponentRef<RenderPipelineSystem>,
+    ENTITY_SYS: components::component_system::ComponentRef<EntitySystem>,
     pub STATUS: Arc<Mutex<StatusCode>>,
     pub sdl: sdl2::Sdl,
     pub window: sdl2::video::Window,
@@ -187,8 +189,8 @@ pub struct Game {
 }
 
 impl Game {
-    pub fn isExit(&self) -> bool {
-        *self.STATUS.lock().unwrap() == StatusCode::CLOSE
+    pub unsafe fn isExit() -> bool {
+        *GAME.STATUS.lock().unwrap() == StatusCode::CLOSE
     }
 
     pub fn new() -> Game{
@@ -231,14 +233,22 @@ impl Game {
             let p_entity_sys = self.ENTITY_SYS.clone();
             let renderJoinHandle = std::thread::spawn(|| {RenderPipelineSystem::init(p_render_sys)});
             let entity_Join_Handle = std::thread::spawn(|| {EntitySystem::init(p_entity_sys)});
-            
-            
+            let p_ent_sys_2 = self.ENTITY_SYS.clone();
+            let mut ent_sys_2 = p_ent_sys_2.lock().unwrap();
+            let mut entity_params = components::entity::entity_system::EntityParams {
+                position: vertex::Vec3::new(0, 0, 0),
+                rotation: angles::Quat::new(0.0, 0.0, 1.0, 0.0),
+                scale: vertex::Vec3::new(0, 0, 0),
+
+            };
+            let p_entity = ent_sys_2.add_entity(entity_params);
+            drop(ent_sys_2);
             // here we loop for the events
             'running: loop {
                 for event in event_pump.poll_iter() {
                     match event {
                         event::Event::Quit {..} =>  {
-                            self.set_status(StatusCode::CLOSE);
+                            unsafe{Game::set_status(StatusCode::CLOSE);}
                             break 'running;
                         }
                         _ => continue
@@ -257,10 +267,17 @@ impl Game {
         
     }
 
-    fn set_status(&mut self, status: StatusCode){
-        *self.STATUS.lock().unwrap() = status;
+    unsafe fn set_status(status: StatusCode){
+        *GAME.STATUS.lock().unwrap() = status;
     }
 
+    pub unsafe fn get_render_sys() -> components::component_system::ComponentRef<RenderPipelineSystem> {
+        GAME.RENDER_SYS.clone()
+    }
+
+    pub unsafe fn get_entity_sys() -> components::component_system::ComponentRef<EntitySystem> {
+        GAME.ENTITY_SYS.clone()
+    }
 
 }
 

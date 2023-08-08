@@ -4,6 +4,8 @@ use std::sync::*;
 
 use crate::common::{engine::gamesys::*, components::entity::*};
 
+use super::entity::entity_system::EntityID;
+
 
 pub struct ComponentSystem {
     component_register: Option<Box<Vec<(entity_system::EntityID, Vec<ComponentRef<&'static dyn BaseComponent>>)>>>,
@@ -22,10 +24,10 @@ pub struct ConstructorDefinition {
 }
 
 pub trait Constructor<T> where T: Base {
-    fn construct(definition: &ConstructorDefinition) -> Option<T>;
+    fn construct(definition: &ConstructorDefinition) -> Option<ComponentRef<T>>;
 }
 
-pub trait BaseComponent: Reflection{
+pub trait BaseComponent: Reflection + Send{
     fn get_entity(&self) -> ComponentRef<entity_system::Entity>;
     fn assign_entity(&mut self);
 }
@@ -39,9 +41,9 @@ impl ComponentSystem {
         }
     }
 
-    pub fn entity_add_component<T>(&mut self, entity: ComponentRef<entity_system::Entity>, definition: &ConstructorDefinition) where T: BaseComponent + Constructor<T>{
+    pub fn entity_add_component(&mut self, entity: EntityID, definition: ComponentRef<dyn BaseComponent>){
 
-        let component = T::construct(definition);
+        
 
         
 
