@@ -9,7 +9,7 @@ use crate::common::{materials::*, *};
 
 // TODO: Add layer reference so that correct pipelines can get the correct meshes
 /// Type of resource
-#[derive(Clone)]
+#[derive(Clone, serde::Deserialize, serde::Serialize)]
 pub struct Mesh {
     pub name: String,
     pub verts: Vec<Vec3>,

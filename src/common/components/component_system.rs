@@ -6,10 +6,11 @@ use crate::common::{engine::gamesys::*, components::entity::*};
 
 use super::entity::entity_system::EntityID;
 
+use serde::*;
 
 pub struct ComponentSystem {
-    component_register: Option<Box<Vec<(entity_system::EntityID, Vec<ComponentRef<&'static dyn BaseComponent>>)>>>,
-    constructor_register: Option<Box<Vec<(std::any::TypeId, &'static (dyn Fn() -> Option<&'static dyn Base> + Sync))>>>,
+    component_register: Box<Vec<(entity_system::EntityID, Vec<ComponentRef<dyn BaseComponent>>)>>,
+    constructor_register: Box<Vec<(std::any::TypeId, &'static (dyn Fn() -> Option<&'static dyn Base> + Sync))>>,
 }
 
 // TODO: Implement a way of reflecting components (need to complent component system first)
@@ -19,35 +20,54 @@ pub fn ComponentRef_new<T>(item: T) -> ComponentRef<T> {
     return Arc::new(Mutex::new(item));
 }
 
-pub struct ConstructorDefinition {
-
-}
+pub type ConstructorDefinition = serde_json::Value;
 
 pub trait Constructor<T> where T: Base {
-    fn construct(definition: &ConstructorDefinition) -> Option<ComponentRef<T>>;
+    unsafe fn construct(entity: EntityID, definition: &ConstructorDefinition) -> Option<ComponentRef<T>>;
 }
 
 pub trait BaseComponent: Reflection + Send{
     fn get_entity(&self) -> ComponentRef<entity_system::Entity>;
-    fn assign_entity(&mut self);
+    fn process_event(&self, event: &entity_system::event::Event);
+    fn get_event_mask(&self) -> entity_system::event::EventFlag;
 }
 
 impl ComponentSystem {
 
     pub fn new() -> ComponentSystem {
         ComponentSystem { 
-            component_register: None,
-            constructor_register: None,
+            component_register: Box::new(Vec::new()),
+            constructor_register: Box::new(Vec::new()),
         }
     }
 
-    pub fn entity_add_component(&mut self, entity: EntityID, definition: ComponentRef<dyn BaseComponent>){
+    pub fn entity_add_component(&mut self, entity: EntityID, component: ComponentRef<dyn BaseComponent>){
 
+        let mut register = self.component_register.to_vec();
+        for (entity_id, mut vec) in register
+        {
+            if(entity_id.eq(&entity)){
+                vec.push(component);
+                break;
+            }
+        }
         
+        
+    }
 
-        
+    pub fn entity_get_components(&mut self, entity: EntityID) -> Vec<ComponentRef<dyn BaseComponent>> {
+
+        let mut register = self.component_register.to_vec();
+        for (entity_id, vec) in register {
+            if(entity_id.eq(&entity)){
+                return vec.clone();
+            }
+        }
+
+        return vec![];
 
     }
+
 
     pub fn init(&'static self){
 

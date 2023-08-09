@@ -1,5 +1,5 @@
 use crate::common::vertex::*;
-
+use serde::*;
 use super::engine::gamesys::Base;
 
 #[derive(Copy, Clone)]
@@ -9,7 +9,7 @@ pub struct Ang3 {
     r : f32
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Serialize, Deserialize)]
 pub struct Quat {
     pub x : f32,
     pub y : f32,

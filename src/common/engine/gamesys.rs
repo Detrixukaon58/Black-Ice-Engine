@@ -249,6 +249,7 @@ impl Game {
                     match event {
                         event::Event::Quit {..} =>  {
                             unsafe{Game::set_status(StatusCode::CLOSE);}
+                            println!("Close sent");
                             break 'running;
                         }
                         _ => continue
@@ -260,7 +261,7 @@ impl Game {
 
             renderJoinHandle.join();
             entity_Join_Handle.join();
-            
+            println!("Exiting Game!!");
         };
 
         futures::executor::block_on(runner);
@@ -268,7 +269,18 @@ impl Game {
     }
 
     unsafe fn set_status(status: StatusCode){
-        *GAME.STATUS.lock().unwrap() = status;
+        *GAME.STATUS.lock().unwrap() = status.clone();
+        let p_rend = Game::get_render_sys().clone();
+        let p_ent = Game::get_entity_sys().clone();
+
+        RenderPipelineSystem::send_status(p_rend, status.clone());
+        EntitySystem::send_status(p_ent, status.clone());
+
+        //rend.send_status(status.clone());
+        //drop(rend);
+        //ent.send_status(status.clone());
+        //drop(ent);
+        return;
     }
 
     pub unsafe fn get_render_sys() -> components::component_system::ComponentRef<RenderPipelineSystem> {

@@ -4,6 +4,7 @@ use std::fs::{*, self};
 use std::io::{prelude::*, BufReader};
 use std::path::Path;
 use std::ptr::*;
+use serde::*;
 
 use crate::common::{APP_DIR, concat_str};
 use crate::common::engine::gamesys::*;
@@ -11,7 +12,42 @@ use crate::common::engine::gamesys::*;
 
 const ASSET_PATH: &str =  "F:\\Rust\\Program 1\\assets";
 
+#[derive(Clone, Serialize, Deserialize)]
+pub struct AssetPath {
+    path: String,
+}
 
+impl AssetPath {
+    pub fn default() -> Self {
+        Self { path: String::new() }
+    }
+
+    pub fn new(path: String) -> Self {
+        Self { path: path }
+    }
+
+    pub fn open_as_file(&mut self) -> FileSys {
+        let mut file = FileSys::new();
+        file.open(self.path.as_str());
+        file
+    }
+
+    pub fn get_file_name(&mut self) -> String {
+        let mut temp = self.path.clone();
+        temp = temp.replace("ASSET:", "");
+        while temp.find("\\").is_some() {
+            temp.remove(0);
+        }
+
+        temp
+    }
+
+    pub fn get_file_ext(&mut self) -> String{
+        let mut temp = self.get_file_name();
+        let a: Vec<&str> = temp.split(".").collect();
+        String::from(*a.last().unwrap())
+    }
+}
 pub struct FileSys{
 
     f: Option<File>,

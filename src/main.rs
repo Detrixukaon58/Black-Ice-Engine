@@ -68,10 +68,6 @@ fn generate_vertices(verts: &Vec<Vec3>, indices: &Vec<i32>){
     }
 }
 
-fn compare(input: &str) -> bool {
-    return input.ends_with(".glsl") || input.ends_with(".vert") || input.ends_with(".frag") || input.ends_with(".comp");
-}
-
 fn include_shaders() -> glsl_include::Context<'static> {
     let path: String = APP_DIR.clone().to_owned() + "\\assets\\shaders\\";
     let directory = fs::read_dir(path).unwrap();
@@ -79,7 +75,7 @@ fn include_shaders() -> glsl_include::Context<'static> {
     for mut path in directory {
         let mut path_unwraped = path.unwrap();
         let path_path = path_unwraped.path();
-        if(path_path.is_file() && compare(path_unwraped.file_name().to_str().unwrap())){
+        if(path_path.is_file() && materials::compare(path_unwraped.file_name().to_str().unwrap())){
             let mut path_file = path_unwraped.file_name();
             let mut path_file_str = path_file.as_os_str().to_str().unwrap();
             

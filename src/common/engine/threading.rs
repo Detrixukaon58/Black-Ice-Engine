@@ -1,6 +1,6 @@
 use std::{thread::{Thread, JoinHandle}, any::{Any, TypeId}, sync::{atomic::AtomicBool, Arc, Mutex}, ops::IndexMut};
 
-use crate::common::{vertex::*, angles::*, components::{entity::entity_system::*, component_system::{BaseComponent, ConstructorDefinition}}};
+use crate::common::{vertex::*, angles::*, components::{entity::entity_system::*, component_system::{BaseComponent, ConstructorDefinition}}, engine::*};
 
 #[derive(Clone)]
 pub enum ThreadData {
@@ -12,6 +12,9 @@ pub enum ThreadData {
     Quat(Quat),
     Entity(Arc<Mutex<Entity>>),
     Component(EntityID, Arc<Mutex<dyn BaseComponent + Send>>),
+    Pipeline(pipeline::PipelineParams),
+    Status(gamesys::StatusCode)
+
 }
 
 unsafe impl Sync for ThreadData{}

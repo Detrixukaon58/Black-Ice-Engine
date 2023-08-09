@@ -28,10 +28,13 @@ pub struct Pipeline {
     device: Option<vk::PhysicalDevice>,
 }
 
+#[derive(Clone)]
 pub struct PipelineParams {
     pub name: String,
     pub layer: usize,
 }
+
+unsafe impl Send for Pipeline {}
 
 impl Pipeline {
     pub fn register_mesh(&mut self, mesh: Arc<Mutex<Mesh>>){
@@ -47,6 +50,7 @@ pub struct RenderPipelineSystem {
     system_status: Arc<Mutex<gamesys::StatusCode>>,
     threadCount: usize,
     threads: Dict<usize, Arc<Mutex<Threader>>>,
+    thread_reciever: Arc<Mutex<Vec<ThreadData>>>,
     device: Option<vk::PhysicalDevice>,
 
 }
@@ -91,6 +95,7 @@ impl RenderPipelineSystem{
             system_status: Arc::new(Mutex::new(gamesys::StatusCode::RUNNING)),
             threadCount: 0,
             threads: Dict::<usize, Arc<Mutex<Threader>>>::new(),
+            thread_reciever: Arc::new(Mutex::new(Vec::new())),
             device: None,
         };
         return pipSys;
@@ -110,8 +115,30 @@ impl RenderPipelineSystem{
 
             // first we setup threads for each layer
             //let mut threads: Box<Dict<usize, Arc<Mutex<Threader>>>> = Box::new(Dict::<usize, Arc<Mutex<Threader>>>::new());
+
             
-            while (!Game::isExit()) {
+            
+            while !Game::isExit() {
+                let mut recv = this.thread_reciever.try_lock();
+                if let Ok(ref mut mutex) = recv {
+                    for th in mutex.as_slice() {
+                        let data = th.clone();
+                        match data {
+                            ThreadData::Empty => todo!(),
+                            ThreadData::I32(i) => todo!(),
+                            ThreadData::String(s) => todo!(),
+                            ThreadData::Vec(vec) => todo!(),
+                            ThreadData::Vec3(vec3) => todo!(),
+                            ThreadData::Quat(quat) => todo!(),
+                            ThreadData::Status(status) => {
+                                let mut sys_status = this.system_status.lock().unwrap();
+                                *sys_status = status;
+                            }
+                            _ => {},
+                        }
+                    }
+                    mutex.clear();
+                }
 
                 for p in &this.pipelines{
                     let pipeline = p.lock().unwrap();
@@ -129,8 +156,22 @@ impl RenderPipelineSystem{
                 std::thread::sleep(std::time::Duration::from_millis(5));
             }
             println!("Closing thread!!");
+            std::thread::sleep(std::time::Duration::from_millis(100));
         }
         0
+    }
+
+    pub fn is_alive(this: &mut Self) -> bool {
+        let p_sys_status = this.system_status.clone();
+        let sys_status = p_sys_status.lock().unwrap();
+        *sys_status != StatusCode::CLOSE
+    }
+
+    pub fn send_status(p_this: Arc<Mutex<Self>>, status: StatusCode) {
+        let this = p_this.lock().unwrap();
+        let p_stat = this.system_status.clone();
+        let mut stat = p_stat.lock().unwrap();
+        stat = stat;
     }
 
     pub fn init<'a>(this: Arc<Mutex<Self>>){

@@ -1,10 +1,12 @@
 
 use std::{ops, f32::{consts::PI}, convert::TryFrom, fmt::{Display, Formatter, Result}, any::Any };
-use crate::{common::engine::gamesys::*, Vertex};
-
+use crate::{common::engine::gamesys::*};
+use serde::*;
 use super::matrices::Vec4;
 
+type Vertex = [f32; 3];
 // Define methods
+
 
 pub trait V3New<T> {
     fn new(_x: T, _y: T, _z: T) -> Vec3;
@@ -26,7 +28,7 @@ pub trait V3Meth {
 
 
 // Define attributes
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Serialize, Deserialize)]
 pub struct Vec3 {
     pub x : f32,
     pub y : f32,

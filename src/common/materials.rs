@@ -2,8 +2,9 @@ use std::{any::{TypeId, Any}, collections::HashMap, mem::{MaybeUninit, size_of_v
 
 #[cfg(feature = "opengl")] use ogl33::c_void;
 #[cfg(feature = "vulkan")]use ash::*;
+use serde::ser::*;
 
-use crate::{common::{filesystem::files::*, engine::gamesys::*, *}, compare};
+use crate::{common::{filesystem::files::*, engine::gamesys::*, *}};
 
 use super::{resources::Resource, matrices::{Matrix33, Matrix34}};
 
@@ -30,9 +31,14 @@ use super::{resources::Resource, matrices::{Matrix33, Matrix34}};
 //     }
 // }
 
+pub fn compare(input: &str) -> bool {
+    return input.ends_with(".glsl") || input.ends_with(".vert") || input.ends_with(".frag") || input.ends_with(".comp");
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct Shader{
-    pub fragmentFile: FileSys,
-    pub vertexFile: FileSys,
+    pub fragmentFile: AssetPath,
+    pub vertexFile: AssetPath,
 }
 
 impl Shader {
@@ -47,17 +53,17 @@ impl Shader {
         let fileName = pathToShaders.split_at(sub).1;
         let fileNameInit = fileName.split(".").collect::<Vec<&str>>()[0];
         let fragPath = format!("{}\\{}.frag", pathToShaders, fileNameInit);
-        let mut fragFile = FileSys::new();
-        fragFile.open(fragPath.as_str());
+        let mut fragFile = AssetPath::new(fragPath);
         let vertPath = format!("{}\\{}.frag", pathToShaders, fileNameInit);
-        let mut vertFile = FileSys::new();
-        fragFile.open(vertPath.as_str());
+        let mut vertFile = AssetPath::new(vertPath);
         Shader { fragmentFile:  fragFile, vertexFile: vertFile}
     }
+
+
     fn read_uniforms(&mut self) -> HashMap<String, Box<&'static dyn Base>> {
         let mut hash: HashMap<String, Box<&'static dyn Base>> = HashMap::new();
-
-        let mut line = self.fragmentFile.read();
+        let mut frag_file = self.fragmentFile.open_as_file();
+        let mut line = frag_file.read();
 
 
         return hash;
@@ -66,11 +72,9 @@ impl Shader {
 
 impl Clone for Shader {
     fn clone(&self) -> Self {
-        let mut fragFile = FileSys::new();
-        fragFile.open(&self.fragmentFile.path.clone());
+        let mut fragFile = self.fragmentFile.clone();
 
-        let mut vertFile = FileSys::new();
-        fragFile.open(&self.vertexFile.path.clone());
+        let mut vertFile = self.vertexFile.clone();
         let mut new_shader = Shader { fragmentFile:  fragFile, vertexFile: vertFile};
         return new_shader;
     }
@@ -83,11 +87,46 @@ pub trait ShaderDescriptor{
     fn get_value_name(&self, offset: isize) -> String;
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub enum ShaderType {
+    Integer(i32),
+    Boolean(bool),
+    Unsigned_Integer(u32),
+    Float(f32),
+    Double(f64),
+    Vec3([f32; 3]),
+    Vec4([f32; 4]),
+    Vec2([f32; 2]),
+    IVec3([i32; 3]),
+    IVec4([i32; 4]),
+    IVec2([i32; 2]),
+    UVec3([u32; 3]),
+    UVec4([u32; 4]),
+    UVec2([u32; 2]),
+    DVec3([f64; 3]),
+    DVec4([f64; 4]),
+    DVec2([f64; 2]),
+
+}
+
+#[derive(serde::Deserialize)]
 pub struct Material {
     
     pub shader: Shader,
-    pub shaderDescriptor: HashMap<String, Box<&'static dyn Base>>,
+    pub shaderDescriptor: HashMap<String, Box<ShaderType>>,
 
+}
+
+impl serde::Serialize for Material {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer {
+        let mut map = serializer.serialize_map(Some(self.shaderDescriptor.len())).unwrap();
+        for (k,v) in &self.shaderDescriptor {
+            map.serialize_entry(&k.to_string(), &*v).unwrap();
+        }
+        map.end()
+    }
 }
 
 impl Clone for Material {
@@ -96,8 +135,9 @@ impl Clone for Material {
         mat.shader = self.shader.clone();
         mat.shaderDescriptor = HashMap::new();
         for param in self.shaderDescriptor.keys() {
+            let value = self.shaderDescriptor.get(param).unwrap().clone();
             
-            mat.shaderDescriptor.insert(param.to_string(), self.shaderDescriptor.get(param).unwrap().clone());
+            mat.shaderDescriptor.insert(param.to_string(), Box::new((*value).clone()));
         }
         return mat;
     }
