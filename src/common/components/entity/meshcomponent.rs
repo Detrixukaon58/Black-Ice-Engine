@@ -3,6 +3,7 @@ use std::any::Any;
 use crate::common::{mesh::*, engine::gamesys::*, vertex::*, angles::Quat};
 
 // This is a type of pointer that is assigned by the game engine. This means that it must be of trait Reflection
+
 struct MeshComponent {
     mesh: Box<Mesh>,
     scale:Vec3,

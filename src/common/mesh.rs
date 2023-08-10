@@ -9,7 +9,7 @@ use crate::common::{materials::*, *};
 
 // TODO: Add layer reference so that correct pipelines can get the correct meshes
 /// Type of resource
-#[derive(Clone, serde::Deserialize, serde::Serialize)]
+
 pub struct Mesh {
     pub name: String,
     pub verts: Vec<Vec3>,
@@ -71,11 +71,28 @@ impl Reflection for Mesh{
     {
         let mut register = Box::new(Register::new(Box::new(self)));
         
-        register.addProp(Property { name: Box::new("faces"), desc: Box::new("The Faces of the object"), reference: Box::new(&self.faces), refType: self.faces.type_id()});
-        register.addProp(Property { name: Box::new("verts"), desc: Box::new("The Vertices of the object"), reference: Box::new(&self.verts), refType: self.verts.type_id()});
-        register.addProp(Property { name: Box::new("normals"), desc: Box::new("The normals of each face. This is ordered in the order of the faces. e.g. faces[1] has normal normals[1], faces[n] has normal normal[n]"), reference: Box::new(&self.normals), refType: self.normals.type_id()});
+        register.addProp(Property { 
+            name: Box::new("faces"),
+            desc: Box::new("The Faces of the object"), 
+            reference: Box::new(&self.faces), 
+            refType: self.faces.type_id()
+        });
+        register.addProp(Property { 
+            name: Box::new("verts"), 
+            desc: Box::new("The Vertices of the object"), 
+            reference: Box::new(&self.verts), 
+            refType: self.verts.type_id()});
+        register.addProp(Property { 
+            name: Box::new("normals"), 
+            desc: Box::new("The normals of each face. This is ordered in the order of the faces. e.g. faces[1] has normal normals[1], faces[n] has normal normal[n]"), 
+            reference: Box::new(&self.normals), 
+            refType: self.normals.type_id()});
         
-        register.addPointer(Pointer {name: Box::new("material"), desc: Box::new("This is the material that is being used my this mesh. This is a script either provided by the engine or by the developer."), reference: self.material.registerReflect(), refType: self.material.type_id()});
+        register.addPointer(Pointer {
+            name: Box::new("material"), 
+            desc: Box::new("This is the material that is being used my this mesh. This is a script either provided by the engine or by the developer."), 
+            reference: self.material.registerReflect(), 
+            refType: self.material.type_id()});
 
         return Ptr{ b: register};
     }

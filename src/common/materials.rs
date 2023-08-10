@@ -35,7 +35,7 @@ pub fn compare(input: &str) -> bool {
     return input.ends_with(".glsl") || input.ends_with(".vert") || input.ends_with(".frag") || input.ends_with(".comp");
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
+
 pub struct Shader{
     pub fragmentFile: AssetPath,
     pub vertexFile: AssetPath,
@@ -87,7 +87,7 @@ pub trait ShaderDescriptor{
     fn get_value_name(&self, offset: isize) -> String;
 }
 
-#[derive(serde::Serialize, serde::Deserialize, Clone)]
+#[derive(Clone)]
 pub enum ShaderType {
     Integer(i32),
     Boolean(bool),
@@ -109,7 +109,7 @@ pub enum ShaderType {
 
 }
 
-#[derive(serde::Deserialize)]
+
 pub struct Material {
     
     pub shader: Shader,
@@ -117,17 +117,6 @@ pub struct Material {
 
 }
 
-impl serde::Serialize for Material {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer {
-        let mut map = serializer.serialize_map(Some(self.shaderDescriptor.len())).unwrap();
-        for (k,v) in &self.shaderDescriptor {
-            map.serialize_entry(&k.to_string(), &*v).unwrap();
-        }
-        map.end()
-    }
-}
 
 impl Clone for Material {
     fn clone(&self) -> Self {

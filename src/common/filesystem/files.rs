@@ -17,6 +17,8 @@ pub struct AssetPath {
     path: String,
 }
 
+impl Base for AssetPath{}
+
 impl AssetPath {
     pub fn default() -> Self {
         Self { path: String::new() }
@@ -67,7 +69,12 @@ impl Reflection for FileSys {
     fn registerReflect(&'static self) -> Ptr<Register<>> {
         let mut register = Box::new(Register::new(Box::new(self)));
         
-        register.addProp(Property{name: Box::new("path"), desc: Box::new("Path of file."), reference: Box::new(&self.path), refType: self.path.type_id()});
+        register.addProp(Property{
+            name: Box::new("path"), 
+            desc: Box::new("Path of file."), 
+            reference: Box::new(&self.path), 
+            refType: self.path.type_id()
+        });
         return Ptr {b: register};
     }
 }

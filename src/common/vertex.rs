@@ -45,6 +45,12 @@ impl Display for Vec3{
     }
 }
 
+impl Default for Vec3 {
+    fn default() -> Self {
+        Self { x: Default::default(), y: Default::default(), z: Default::default() }
+    }
+}
+
 impl V3New<f32> for Vec3 {
     fn new(_x: f32, _y: f32, _z: f32) -> Vec3 {
         return Vec3{x: _x, y: _y, z: _z};

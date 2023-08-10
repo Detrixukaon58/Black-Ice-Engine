@@ -4,7 +4,7 @@ use std::any::Any;
 use std::string;
 use crate::common::angles::QuatConstructor;
 use crate::common::vertex::V3New;
-use crate::common::{*, mesh::Mesh, components::{component_system::ComponentSystem, entity::entity_system::EntitySystem}};
+use crate::common::{*, mesh::Mesh, components::{component_system::ComponentSystem, entity::entity_system::*}};
 use std::sync::{Arc, Mutex};
 use ash::extensions::ext::DebugUtils;
 use futures::join;
@@ -243,6 +243,15 @@ impl Game {
             };
             let p_entity = ent_sys_2.add_entity(entity_params);
             drop(ent_sys_2);
+            let def: serde_json::Value = serde_json::from_str(r#"
+            {
+                "image_file": {
+                    "path" : "ASSET:images\nemissa_hitomi.png"
+                }
+            }
+            "#).unwrap();
+            println!("{}", def["image_file"]);
+            Entity::add_component::<components::entity::image_component::Image>(p_entity, def);
             // here we loop for the events
             'running: loop {
                 for event in event_pump.poll_iter() {
@@ -255,8 +264,6 @@ impl Game {
                         _ => continue
                     }
                 }
-
-                
             }
 
             renderJoinHandle.join();

@@ -1,10 +1,13 @@
+use std::sync::Weak;
+
 use crate::common::{components::{component_system::*, entity_system::*}, *, filesystem::files::AssetPath};
 
 use serde::*;
 
-#[derive(Serialize, Deserialize)]
+
 pub struct Image {
     image_file: filesystem::files::AssetPath,
+    count: i32,
     p_Entity: ComponentRef<Entity>
 }
 
@@ -12,7 +15,15 @@ impl Base for Image{}
 
 impl engine::gamesys::Reflection for Image {
     fn registerReflect(&'static self) -> Ptr<Register<>> {
-        todo!()
+        let mut register = Box::new(Register::new(Box::new(self)));
+
+        register.addProp(Property { 
+            name: Box::new("image_file"), 
+            desc: Box::new("Path to image file"), 
+            reference: Box::new(&self.image_file), 
+            refType: std::any::TypeId::of::<AssetPath>() });
+
+        Ptr { b: register }
     }
 }
 
@@ -21,39 +32,37 @@ impl BaseComponent for Image {
         self.p_Entity.clone()
     }
 
-    fn process_event(&self, event: &event::Event) {
+    fn process_event(&mut self, event: &entity_event::Event) {
         let event_flag = event.event_flag;
         match  event_flag {
-            event::EventFlag::INIT => {
+            entity_event::EventFlag::INIT => {
 
             },
-            event::EventFlag::UPDATE => {
-                println!("This works!!!");
+            entity_event::EventFlag::UPDATE => {
+                println!("{}",self.count);
+                self.count += 1;
             }
-            event::EventFlag::RESPAWN => {
+            entity_event::EventFlag::RESPAWN => {
 
             }
             _ => {}
         }
     }
 
-    fn get_event_mask(&self) -> event::EventFlag {
-        use event::EventFlag;
+    fn get_event_mask(&self) -> entity_event::EventFlag {
+        use entity_event::EventFlag;
         EventFlag::INIT | EventFlag::UPDATE | EventFlag::RESPAWN
     }
 }
 
 impl Constructor<Image> for Image {
-    unsafe fn construct(entity: EntityID, definition: &ConstructorDefinition) -> Option<ComponentRef<Image>> {
-        let p_ent_sys = Game::get_entity_sys().clone();
-        let mut ent_sys = p_ent_sys.lock().unwrap();
-        let entity = ent_sys.get_entity(entity).unwrap().clone();
-        drop(ent_sys);
+    unsafe fn construct(entity: ComponentRef<Entity>, definition: &ConstructorDefinition) -> Option<ComponentRef<Image>> {
         let map = definition.get("image_file").expect("Failed to Build Image").as_object().unwrap();
         let path = String::from(map.get("path").unwrap().as_str().unwrap());
         Some(ComponentRef_new(Self {
             image_file: AssetPath::new(path.clone()),
-            p_Entity: entity
+            count: 0,
+            p_Entity: entity.clone()
         }))
 
     }

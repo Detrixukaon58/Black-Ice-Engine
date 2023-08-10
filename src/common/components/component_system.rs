@@ -8,6 +8,7 @@ use super::entity::entity_system::EntityID;
 
 use serde::*;
 
+
 pub struct ComponentSystem {
     component_register: Box<Vec<(entity_system::EntityID, Vec<ComponentRef<dyn BaseComponent>>)>>,
     constructor_register: Box<Vec<(std::any::TypeId, &'static (dyn Fn() -> Option<&'static dyn Base> + Sync))>>,
@@ -23,13 +24,13 @@ pub fn ComponentRef_new<T>(item: T) -> ComponentRef<T> {
 pub type ConstructorDefinition = serde_json::Value;
 
 pub trait Constructor<T> where T: Base {
-    unsafe fn construct(entity: EntityID, definition: &ConstructorDefinition) -> Option<ComponentRef<T>>;
+    unsafe fn construct(entity: ComponentRef<entity_system::Entity>, definition: &ConstructorDefinition) -> Option<ComponentRef<T>>;
 }
 
 pub trait BaseComponent: Reflection + Send{
     fn get_entity(&self) -> ComponentRef<entity_system::Entity>;
-    fn process_event(&self, event: &entity_system::event::Event);
-    fn get_event_mask(&self) -> entity_system::event::EventFlag;
+    fn process_event(&mut self, event: &entity_system::entity_event::Event);
+    fn get_event_mask(&self) -> entity_system::entity_event::EventFlag;
 }
 
 impl ComponentSystem {
@@ -42,16 +43,16 @@ impl ComponentSystem {
     }
 
     pub fn entity_add_component(&mut self, entity: EntityID, component: ComponentRef<dyn BaseComponent>){
-
-        let mut register = self.component_register.to_vec();
-        for (entity_id, mut vec) in register
+        println!("Adding component!!");
+        let register = self.component_register.as_mut();
+        for (entity_id, mut vec) in register.to_vec()
         {
             if(entity_id.eq(&entity)){
                 vec.push(component);
-                break;
+                return;
             }
         }
-        
+        register.push((entity, vec![component]));
         
     }
 

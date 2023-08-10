@@ -13,7 +13,8 @@ pub enum ThreadData {
     Entity(Arc<Mutex<Entity>>),
     Component(EntityID, Arc<Mutex<dyn BaseComponent + Send>>),
     Pipeline(pipeline::PipelineParams),
-    Status(gamesys::StatusCode)
+    Status(gamesys::StatusCode),
+    EntityEvent(entity_event::Event)
 
 }
 

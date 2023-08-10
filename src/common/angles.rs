@@ -20,6 +20,12 @@ pub struct Quat {
 impl Base for Ang3 {}
 impl Base for Quat {}
 
+impl Default for Quat {
+    fn default() -> Self {
+        Self { x: Default::default(), y: Default::default(), z: Default::default(), w: Default::default() }
+    }
+}
+
 pub trait QuatConstructor<T> {
     fn new(x: T, y: T, z: T, w: T) -> Quat;
 }
