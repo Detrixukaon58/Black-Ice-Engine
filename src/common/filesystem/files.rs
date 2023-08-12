@@ -114,12 +114,12 @@ impl FileSys{
 
     pub fn open(&mut self, _path: &str){
         // do more to getting it for only local systems e.g. get resources from pak files when in release and from local assets when in debug
-        print!("{}", _path);
+        println!("{}", _path);
         let full_path = format!("{}\\{}", ASSET_PATH, _path[7..].to_owned());
         let dir = fs::metadata(full_path.clone()).unwrap();
         
         if(dir.is_file()){
-            self.f = Option::Some(File::open(full_path.as_str()).expect(format!("File {} not found!", _path[7..].to_owned()).as_str()));// format "ASSET:path\\to\\file" => "DRIVE:\\path\\to\\assets\\path\\to\\file"
+            self.f = Option::Some(File::open(full_path.as_str()).expect(format!("File {} not found!", _path[7..].to_owned()).as_str()));// format "ASSET:\\path\\to\\file" => "DRIVE:\\path\\to\\assets\\path\\to\\file"
             self.path = String::from(_path);
             self.b = Option::Some(BufReader::new((*self.f.as_ref().unwrap()).try_clone().expect("Couldn't clone file for BufReader!!")));
             self.is_file = true;
@@ -268,7 +268,12 @@ impl Handlers for FileSys{
         return result;
     }
     fn pngHandler(&mut self) -> String {
-        unimplemented!()
+        let mut buff = self.b.as_mut().unwrap();
+        let mut temp: Vec<u8> = vec![];
+        let mut result = String::from("");
+
+        (*buff).read_to_end(&mut temp).expect("Couldn't read anything!!");
+        return result;
     }
 
 }

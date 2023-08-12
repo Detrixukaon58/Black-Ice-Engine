@@ -8,10 +8,13 @@ use std::sync::atomic::AtomicI32;
 use std::future::*;
 use sdl2::*;
 use async_trait::*;
+use winit::dpi::Pixel;
 
 use crate::common::materials::BakeVulkan;
+use crate::common::matrices::*;
 use crate::common::mesh::*;
 use crate::common::engine::*;
+use crate::common::vertex::*;
 
 use super::gamesys::*;
 use super::threading::*;
@@ -51,8 +54,13 @@ pub struct RenderPipelineSystem {
     threadCount: usize,
     threads: Dict<usize, Arc<Mutex<Threader>>>,
     thread_reciever: Arc<Mutex<Vec<ThreadData>>>,
-    device: Option<vk::PhysicalDevice>,
+    driver_vals: Option<DriverValues>,
 
+}
+
+#[derive(Clone, Default)]
+struct QueueFamiltyIdices {
+    graphics_family: Option<u32>,
 }
 
 impl RenderPipelineSystem{
@@ -65,7 +73,7 @@ impl RenderPipelineSystem{
             name: params.name.clone(),
             meshs: Vec::new(),
             layer: params.layer,
-            device: this.device.clone()
+            device: this.driver_vals.as_ref().unwrap().device
         };
         if(this.threadCount < params.layer){
             this.threadCount = params.layer;
@@ -96,7 +104,7 @@ impl RenderPipelineSystem{
             threadCount: 0,
             threads: Dict::<usize, Arc<Mutex<Threader>>>::new(),
             thread_reciever: Arc::new(Mutex::new(Vec::new())),
-            device: None,
+            driver_vals: None,
         };
         return pipSys;
     }
@@ -133,6 +141,9 @@ impl RenderPipelineSystem{
                             ThreadData::Status(status) => {
                                 let mut sys_status = this.system_status.lock().unwrap();
                                 *sys_status = status;
+                            },
+                            ThreadData::QuickDraw(v, f, tx, d) => {
+
                             }
                             _ => {},
                         }
@@ -180,34 +191,12 @@ impl RenderPipelineSystem{
         Self::processing(&mut this.lock().unwrap());
     }
 
+    //region Vulkan Render 
+
     #[cfg(feature = "vulkan")]
     unsafe fn init_vulkan(this:&mut Self)  {
         use winit::dpi::Pixel;
         
-        unsafe fn checkDeviceSuitability(physical_device: &vk::PhysicalDevice, instance: &Instance) -> bool{
-            let physical_device_properties = instance.get_physical_device_properties(*physical_device);
-            let physical_device_features = instance.get_physical_device_features(*physical_device);
-
-            return (physical_device_properties.device_type == vk::PhysicalDeviceType::DISCRETE_GPU) && physical_device_features.geometry_shader == 1;
-        }
-
-        unsafe fn rate_physical_device(physical_device: &vk::PhysicalDevice, instance: &Instance) -> u32 {
-            let mut score: u32 = 0;
-            let physical_device_properties = instance.get_physical_device_properties(*physical_device);
-            let physical_device_features = instance.get_physical_device_features(*physical_device);
-            
-            if(physical_device_properties.device_type == vk::PhysicalDeviceType::DISCRETE_GPU) {
-                score += 1000000;
-            }
-
-            score += physical_device_properties.limits.max_image_dimension2_d;
-            println!("{name}: {score} : {hasGeom}", name=std::ffi::CStr::from_ptr(physical_device_properties.device_name.as_ptr()).to_str().unwrap(), hasGeom = physical_device_features.geometry_shader);
-            if physical_device_features.geometry_shader == 0 {
-                return 0;
-            }
-            
-            score
-        }
         let entry = ash::Entry::load().expect("Failed to get entry!");
         std::thread::sleep(std::time::Duration::from_secs(1));
         println!(
@@ -217,7 +206,7 @@ impl RenderPipelineSystem{
             vk::api_version_minor(entry.try_enumerate_instance_version().unwrap().unwrap()),
             vk::api_version_patch(entry.try_enumerate_instance_version().unwrap().unwrap())
         );
-    
+        
 
         let mut appInfo = vk::ApplicationInfo::default();
         appInfo.s_type = vk::StructureType::APPLICATION_INFO;
@@ -270,7 +259,7 @@ impl RenderPipelineSystem{
         let mut physical_device: Option<vk::PhysicalDevice> = None;
         let mut device_candidates: Vec<(u32, vk::PhysicalDevice)> = Vec::<(u32, vk::PhysicalDevice)>::new();
         for p_physical_device in &physical_devices {
-            let score = rate_physical_device(p_physical_device, &instance);
+            let score = RenderPipelineSystem::rate_physical_device(p_physical_device, &instance);
             device_candidates.push((score, *p_physical_device));
         }
         let candidate = device_candidates.first().unwrap();
@@ -281,10 +270,144 @@ impl RenderPipelineSystem{
             println!("{}", candidate.0);
             panic!("Failed to find suitible GPU!");
         }
+        
+        
+        let driver = this.driver_vals.as_mut().unwrap();
 
+        driver.device = physical_device;
+        driver.instance = Some(instance);
+
+        
+
+        let mut vt_input = vk::VertexInputBindingDescription::default();
+        vt_input.input_rate = vk::VertexInputRate::VERTEX;
+        vt_input.stride = std::mem::size_of::<[f32; 3]>() as u32;
+        vt_input.binding = 0;
         
     }
 
+    #[cfg(feature = "vulkan")]
+    unsafe fn checkDeviceSuitability(physical_device: &vk::PhysicalDevice, instance: &Instance) -> bool{
+        let indices = RenderPipelineSystem::find_queue_families(physical_device, instance);
+
+        return indices.graphics_family.is_some();
+    }
+
+    #[cfg(feature = "vulkan")]
+    unsafe fn find_queue_families(physical_device: &vk::PhysicalDevice, instance: &Instance) -> QueueFamiltyIdices{
+
+        let mut indices: QueueFamiltyIdices = QueueFamiltyIdices::default();
+        let mut queue_fams = instance.get_physical_device_queue_family_properties(*physical_device);
+
+        let mut i: u32 = 0;
+        for queue_family in queue_fams {
+            if queue_family.queue_flags.contains(vk::QueueFlags::GRAPHICS) {
+                indices.graphics_family = Some(i);
+                break;
+            }
+
+            i +=1;
+        }
+
+        indices
+    }
+
+    #[cfg(feature = "vulkan")]
+    unsafe fn rate_physical_device(physical_device: &vk::PhysicalDevice, instance: &Instance) -> u32 {
+        let mut score: u32 = 0;
+        let physical_device_properties = instance.get_physical_device_properties(*physical_device);
+        let physical_device_features = instance.get_physical_device_features(*physical_device);
+        
+        if(physical_device_properties.device_type == vk::PhysicalDeviceType::DISCRETE_GPU) {
+            score += 1000000;
+        }
+
+        score += physical_device_properties.limits.max_image_dimension2_d;
+        println!("{name}: {score} : {hasGeom}", name=std::ffi::CStr::from_ptr(physical_device_properties.device_name.as_ptr()).to_str().unwrap(), hasGeom = physical_device_features.geometry_shader);
+        if physical_device_features.geometry_shader == 0 {
+            return 0;
+        }
+        
+        score
+    }
+
+    #[cfg(feature = "vulkan")]
+    pub unsafe fn create_logical_device(driver: &mut DriverValues) {
+        
+        let mut indices = RenderPipelineSystem::find_queue_families(driver.device.as_ref().unwrap(), driver.instance.as_ref().unwrap());
+
+        let mut queue_create_info = vk::DeviceQueueCreateInfo::builder()
+            .queue_family_index(indices.graphics_family.unwrap())
+            .build();
+        queue_create_info.s_type = vk::StructureType::DEVICE_QUEUE_CREATE_INFO;
+        queue_create_info.queue_count = 1;
+
+        let queue_priority = 1.0;
+        queue_create_info.p_queue_priorities = &queue_priority;
+
+        let device_features = vk::PhysicalDeviceFeatures::default();
+
+        let deice_info = vk::DeviceCreateInfo::builder()
+            .queue_create_infos(&[queue_create_info])
+            .enabled_features(&device_features)
+            .build();
+
+    }
+
+    //endregion
+
+    //region OpenGL
+
+
+    //endregion
+
+    //region GLES
+
+
+    //endregion
+
+
+    pub fn quick_redner<'a>(&mut self, vertices: Vec<Vertex>, faces: Vec<(i32, i32, i32)>, tex_coord: Vec<[f32; 2]>, image: std::iter::Enumerate<imagine::png::PngRawChunkIter<'a>>){
+        
+        let mut pallete = Vec::<Vec4>::new();
+        let mut data = Vec::<Vec4>::new();
+        
+        for (n, raw_chunk) in image {
+            let chunk_res = imagine::png::PngChunk::try_from(raw_chunk).unwrap();
+            match chunk_res {
+                imagine::png::PngChunk::sRGB(srgb) => {
+                    
+                },
+                imagine::png::PngChunk::PLTE(plte) => {
+                    for d in plte.entries() {
+                        pallete.push(Vec4::new(d[0].cast(), d[1].cast(), d[2].cast(), 0));
+                    }
+                },
+                imagine::png::PngChunk::tRNS(trns) => {
+                    for (a, c) in trns.to_alphas().iter().zip(pallete.iter_mut()) {
+                        c.w = a.cast();
+                    }
+                },
+                imagine::png::PngChunk::IDAT(idat) => {
+                    let data_string = format!("{:?}", idat);
+                    for b in data_string.as_bytes() {
+                        data.push(pallete[*b as usize]);
+                    }
+                },
+                _ => continue
+            }
+        }
+        'test: loop{
+            let p_recv = self.thread_reciever.clone();
+            let mut recv = match p_recv.try_lock() {
+                Ok(re) => re,
+                Err(err) => continue 'test
+            };
+            recv.push(ThreadData::QuickDraw(vertices.clone(), faces.clone(), tex_coord.clone(), data.clone()));
+            drop(recv);
+            break;
+        }
+    }
 
 }
 
@@ -295,17 +418,34 @@ pub trait VulkanRender {
     fn render(th: Arc<Mutex<Self>>) -> i32;
 }
 
+#[cfg(feature = "vulkan")]
+#[derive(Default, Clone)]
+pub struct DriverValues {
+    pub instance: Option<Instance>,
+    pub device: Option<vk::PhysicalDevice>,
+    pub logical_devices : Vec<vk::Device>,
+
+}
+
 #[cfg(feature = "opengl")]
 pub trait OGLRender {
     fn init(&self) -> i32;
     fn render(th: Arc<Mutex<Self>>) -> i32;
 }
 
+#[cfg(feature = "opengl")]
+#[derive(Default, Clone)]
+pub struct DriverValues {}
+
 #[cfg(feature = "gles")]
 pub trait GLESRender {
     fn init(&self) -> i32;
     fn render(th: Arc<Mutex<Self>>) -> i32;
 }
+
+#[cfg(feature = "gles")]
+#[derive(Default, Clone, Clone)]
+pub struct DriverValues {}
 
 #[cfg(feature = "vulkan")]
 impl VulkanRender for Pipeline {

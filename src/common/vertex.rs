@@ -4,7 +4,7 @@ use crate::{common::engine::gamesys::*};
 use serde::*;
 use super::matrices::Vec4;
 
-type Vertex = [f32; 3];
+pub type Vertex = [f32; 3];
 // Define methods
 
 

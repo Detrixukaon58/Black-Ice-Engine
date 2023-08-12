@@ -1,6 +1,6 @@
 use std::{thread::{Thread, JoinHandle}, any::{Any, TypeId}, sync::{atomic::AtomicBool, Arc, Mutex}, ops::IndexMut};
 
-use crate::common::{vertex::*, angles::*, components::{entity::entity_system::*, component_system::{BaseComponent, ConstructorDefinition}}, engine::*};
+use crate::common::{vertex::*, angles::*, components::{entity::entity_system::*, component_system::{BaseComponent, ConstructorDefinition}}, engine::*, matrices::*};
 
 #[derive(Clone)]
 pub enum ThreadData {
@@ -14,7 +14,8 @@ pub enum ThreadData {
     Component(EntityID, Arc<Mutex<dyn BaseComponent + Send>>),
     Pipeline(pipeline::PipelineParams),
     Status(gamesys::StatusCode),
-    EntityEvent(entity_event::Event)
+    EntityEvent(entity_event::Event),
+    QuickDraw(Vec<Vertex>, Vec<(i32, i32, i32)>, Vec<[f32; 2]>, Vec<Vec4>)
 
 }
 

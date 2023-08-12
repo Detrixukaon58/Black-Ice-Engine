@@ -1,13 +1,13 @@
 use std::sync::Weak;
 
-use crate::common::{components::{component_system::*, entity_system::*}, *, filesystem::files::AssetPath};
+use crate::common::{components::{component_system::*, entity_system::*}, *, filesystem::files::*, vertex::*};
 
 use serde::*;
 
 
 pub struct Image {
     image_file: filesystem::files::AssetPath,
-    count: i32,
+    count: std::time::SystemTime,
     p_Entity: ComponentRef<Entity>
 }
 
@@ -39,8 +39,10 @@ impl BaseComponent for Image {
 
             },
             entity_event::EventFlag::UPDATE => {
-                println!("{}",self.count);
-                self.count += 1;
+                //println!("{}", std::time::SystemTime::now().duration_since(self.count).unwrap().as_millis());
+                self.count = std::time::SystemTime::now();
+
+                self.draw();
             }
             entity_event::EventFlag::RESPAWN => {
 
@@ -59,11 +61,51 @@ impl Constructor<Image> for Image {
     unsafe fn construct(entity: ComponentRef<Entity>, definition: &ConstructorDefinition) -> Option<ComponentRef<Image>> {
         let map = definition.get("image_file").expect("Failed to Build Image").as_object().unwrap();
         let path = String::from(map.get("path").unwrap().as_str().unwrap());
+        println!("{}", path);
         Some(ComponentRef_new(Self {
             image_file: AssetPath::new(path.clone()),
-            count: 0,
+            count: std::time::SystemTime::now(),
             p_Entity: entity.clone()
         }))
 
+    }
+}
+
+impl Image {
+    pub fn draw(&mut self) {
+        let mut vertices = vec![
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(1.0, 0.0, 0.0),
+            Vec3::new(1.0, 1.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0)
+        ];
+
+        let mut temp = vertices.into_iter().map(|vert| vert.to_buffer()).collect::<Vec<Vertex>>();
+
+        let mut faces = vec![
+            (0, 1, 2),
+            (0, 2, 3)
+        ];
+
+        let tex_cood = vec![
+            [0.0, 0.0],
+            [1.0, 0.0],
+            [1.0, 1.0],
+            [0.0, 1.0]
+        ];
+        
+        
+        let mut image_file = self.image_file.open_as_file();
+        
+        let image = image_file.read();
+
+        let mut image_bytes = image.as_bytes();
+
+        let image_idat = imagine::png::PngRawChunkIter::new(&image_bytes).enumerate();
+        unsafe{
+            let mut p_render_sys = Game::get_render_sys().clone();
+            let mut render_sys = p_render_sys.lock().unwrap();
+            render_sys.quick_redner(temp, faces, tex_cood, image_idat);
+        }
     }
 }

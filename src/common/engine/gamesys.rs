@@ -246,7 +246,7 @@ impl Game {
             let def: serde_json::Value = serde_json::from_str(r#"
             {
                 "image_file": {
-                    "path" : "ASSET:images\nemissa_hitomi.png"
+                    "path" : "ASSET:\\images\\nemissa_hitomi.png"
                 }
             }
             "#).unwrap();

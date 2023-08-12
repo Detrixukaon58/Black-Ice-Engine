@@ -136,7 +136,7 @@ impl Base for Material{}
 
 impl New<Material> for Material {
     fn new() -> Material {
-        return Material {shader: Shader::new("ASSET:shaders/slim-shader.shad".to_string()),shaderDescriptor: HashMap::new() };
+        return Material {shader: Shader::new("ASSET:/shaders/slim-shader.shad".to_string()),shaderDescriptor: HashMap::new() };
     }
 }
 
