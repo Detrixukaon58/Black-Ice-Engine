@@ -1,5 +1,6 @@
 #![feature(mutex_unlock)]
 use std::any::Any;
+use raw_window_handle::HasRawWindowHandle;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ops::DerefMut;
@@ -9,6 +10,9 @@ use std::future::*;
 use sdl2::*;
 use async_trait::*;
 use winit::dpi::Pixel;
+use vk::Handle;
+
+extern crate raw_window_handle;
 
 use crate::common::materials::BakeVulkan;
 use crate::common::matrices::*;
@@ -61,6 +65,14 @@ pub struct RenderPipelineSystem {
 #[derive(Clone, Default)]
 struct QueueFamiltyIdices {
     graphics_family: Option<u32>,
+    present_family: Option<u32>,
+    
+}
+
+impl QueueFamiltyIdices {
+    pub fn is_complete(&self) -> bool {
+        self.graphics_family.is_some() && self.present_family.is_some()
+    }
 }
 
 impl RenderPipelineSystem{
@@ -73,7 +85,7 @@ impl RenderPipelineSystem{
             name: params.name.clone(),
             meshs: Vec::new(),
             layer: params.layer,
-            device: this.driver_vals.as_ref().unwrap().device
+            device: Some(this.driver_vals.as_ref().unwrap().physical_devices[0])
         };
         if(this.threadCount < params.layer){
             this.threadCount = params.layer;
@@ -104,7 +116,7 @@ impl RenderPipelineSystem{
             threadCount: 0,
             threads: Dict::<usize, Arc<Mutex<Threader>>>::new(),
             thread_reciever: Arc::new(Mutex::new(Vec::new())),
-            driver_vals: None,
+            driver_vals: Some(DriverValues::default()),
         };
         return pipSys;
     }
@@ -224,6 +236,9 @@ impl RenderPipelineSystem{
             .unwrap()
             .to_vec();
         extension_names.push(ash::extensions::ext::DebugUtils::name().to_str().unwrap());
+        // for ext in extension_names.to_vec() {
+        //     println!("{}", ext);
+        // }
         let layer_names = [std::ffi::CStr::from_bytes_with_nul_unchecked(
             b"VK_LAYER_KHRONOS_validation\0",
         )];
@@ -231,10 +246,12 @@ impl RenderPipelineSystem{
             .iter()
             .map(|raw_name| raw_name.as_ptr())
             .collect();
+        let ext1 = extension_names.into_iter().map(|s| s.as_ptr().cast::<i8>()).collect::<Vec<*const i8>>();
         let create_flags = vk::InstanceCreateFlags::default();
-        let mut createInfo = vk::InstanceCreateInfo::default();
+        let mut createInfo = vk::InstanceCreateInfo::builder()
+            .enabled_extension_names(ext1.as_slice());
         createInfo.p_application_info = &appInfo;
-        createInfo.pp_enabled_extension_names = extension_names.into_iter().map(|s| s.as_ptr().cast::<i8>()).collect::<Vec<*const i8>>().as_ptr();
+        
         createInfo.pp_enabled_layer_names = layers_names_raw.as_ptr();
         createInfo.flags = create_flags;
         println!("Creating inst.");
@@ -252,32 +269,52 @@ impl RenderPipelineSystem{
         // create devices
 
         let physical_devices = instance.enumerate_physical_devices().expect("Failed to get physical devices");
-
-        if(physical_devices.len() == 0){
-            panic!("Couldn't find any gpus with Vulkan support!! Try OpenGL instead!!");
-        }
-        let mut physical_device: Option<vk::PhysicalDevice> = None;
-        let mut device_candidates: Vec<(u32, vk::PhysicalDevice)> = Vec::<(u32, vk::PhysicalDevice)>::new();
-        for p_physical_device in &physical_devices {
-            let score = RenderPipelineSystem::rate_physical_device(p_physical_device, &instance);
-            device_candidates.push((score, *p_physical_device));
-        }
-        let candidate = device_candidates.first().unwrap();
-        if(candidate.0 > 0){
-            physical_device = Some(candidate.1);
-        }
-        else{
-            println!("{}", candidate.0);
-            panic!("Failed to find suitible GPU!");
-        }
-        
         
         let driver = this.driver_vals.as_mut().unwrap();
 
-        driver.device = physical_device;
+        driver.physical_devices = physical_devices;
         driver.instance = Some(instance);
+        driver.entry = Some(entry);
 
         
+
+        // Change to this if all else fails!!
+        // let handle = driver.instance.as_ref().unwrap().handle().as_raw();
+
+        // let surface_khr = GAME.window.vulkan_create_surface(handle as usize).expect("failed to create surface");
+
+        // driver.surface = Some(vk::SurfaceKHR::from_raw(surface_khr));
+
+        driver.surface = RenderPipelineSystem::get_surface(driver);
+        
+        let mut indices = RenderPipelineSystem::find_queue_families(driver, 0);
+
+        let mut queue_create_info = vk::DeviceQueueCreateInfo::builder()
+            .queue_family_index(indices.graphics_family.unwrap())
+            .build();
+        queue_create_info.s_type = vk::StructureType::DEVICE_QUEUE_CREATE_INFO;
+        queue_create_info.queue_count = 1;
+
+        let queue_priority = 1.0;
+        queue_create_info.p_queue_priorities = &queue_priority;
+
+        let device_features = vk::PhysicalDeviceFeatures::default();
+
+        let mut device_info = vk::DeviceCreateInfo::builder()
+            .queue_create_infos(&[queue_create_info])
+            .enabled_features(&device_features)
+            .build();
+
+        device_info.s_type = vk::StructureType::DEVICE_CREATE_INFO;
+        device_info.queue_create_info_count = 1;
+        device_info.enabled_extension_count = 0;
+
+        let mut logical_device = driver.instance.as_ref().unwrap().create_device(driver.physical_devices[0], &device_info, None).expect("failed to create logical device!");
+
+        driver.logical_devices.push(Some(logical_device));
+
+        let queue = driver.logical_devices[0].as_ref().unwrap().get_device_queue( indices.graphics_family.unwrap(), 0);
+
 
         let mut vt_input = vk::VertexInputBindingDescription::default();
         vt_input.input_rate = vk::VertexInputRate::VERTEX;
@@ -287,25 +324,59 @@ impl RenderPipelineSystem{
     }
 
     #[cfg(feature = "vulkan")]
-    unsafe fn checkDeviceSuitability(physical_device: &vk::PhysicalDevice, instance: &Instance) -> bool{
-        let indices = RenderPipelineSystem::find_queue_families(physical_device, instance);
+    unsafe fn get_best_device(driver:&mut DriverValues) -> usize {
+        if(driver.physical_devices.len() == 0){
+            panic!("Couldn't find any gpus with Vulkan support!! Try OpenGL instead!!");
+        }
+        let mut device_candidates: Vec<(u32, usize)> = Vec::<(u32, usize)>::new();
+        let mut i = 0;
+        for p_physical_device in &driver.physical_devices {
+            let score = RenderPipelineSystem::rate_physical_device(p_physical_device, driver.instance.as_ref().unwrap());
+            device_candidates.push((score, i));
+            i += 1;
+        }
+        for candidate in device_candidates {
+            if candidate.0 > 0 {
+                if RenderPipelineSystem::checkDeviceSuitability(driver, candidate.1) {
+                    return candidate.1;
+                }
+            }
+        }
 
-        return indices.graphics_family.is_some();
+        0
     }
 
     #[cfg(feature = "vulkan")]
-    unsafe fn find_queue_families(physical_device: &vk::PhysicalDevice, instance: &Instance) -> QueueFamiltyIdices{
+    unsafe fn checkDeviceSuitability(driver:&mut DriverValues, device: usize) -> bool{
+        let indices = RenderPipelineSystem::find_queue_families(driver, device);
+
+        return indices.is_complete();
+    }
+
+    #[cfg(feature = "vulkan")]
+    unsafe fn find_queue_families(driver:&mut DriverValues, device: usize) -> QueueFamiltyIdices{
 
         let mut indices: QueueFamiltyIdices = QueueFamiltyIdices::default();
-        let mut queue_fams = instance.get_physical_device_queue_family_properties(*physical_device);
+        let mut queue_fams = driver.instance.as_ref().unwrap().get_physical_device_queue_family_properties(driver.physical_devices[device]);
+        let mut surface_loader = extensions::khr::Surface::new(driver.entry.as_ref().unwrap(), driver.instance.as_ref().unwrap());
+        
 
         let mut i: u32 = 0;
         for queue_family in queue_fams {
             if queue_family.queue_flags.contains(vk::QueueFlags::GRAPHICS) {
                 indices.graphics_family = Some(i);
-                break;
+                
             }
 
+            let present_support = surface_loader.get_physical_device_surface_support(driver.physical_devices[device], i, driver.surface.unwrap()).expect("Failed to check surface support!!");
+            if present_support {
+                indices.present_family = Some(i);
+            }
+            
+
+            if indices.is_complete() {
+                break;
+            }
             i +=1;
         }
 
@@ -332,25 +403,78 @@ impl RenderPipelineSystem{
     }
 
     #[cfg(feature = "vulkan")]
-    pub unsafe fn create_logical_device(driver: &mut DriverValues) {
+    pub unsafe fn get_surface(driver: &mut DriverValues) -> Option<vk::SurfaceKHR>{
+
         
-        let mut indices = RenderPipelineSystem::find_queue_families(driver.device.as_ref().unwrap(), driver.instance.as_ref().unwrap());
 
-        let mut queue_create_info = vk::DeviceQueueCreateInfo::builder()
-            .queue_family_index(indices.graphics_family.unwrap())
-            .build();
-        queue_create_info.s_type = vk::StructureType::DEVICE_QUEUE_CREATE_INFO;
-        queue_create_info.queue_count = 1;
+        #[cfg(target_os = "windows")]
+        unsafe fn get_surface_a(driver: &mut DriverValues) -> Option<vk::SurfaceKHR> {
+            let mut window_info: sdl2::raw_window_handle::SDL_SysWMinfo = std::mem::zeroed();
+            let bb  = SDL_GetWindowWMInfo(GAME.window.raw(), &mut window_info);
 
-        let queue_priority = 1.0;
-        queue_create_info.p_queue_priorities = &queue_priority;
+            let display_handle = raw_window_handle::WindowsDisplayHandle::empty();
 
-        let device_features = vk::PhysicalDeviceFeatures::default();
+            let mut window_handle = raw_window_handle::Win32WindowHandle::empty();
+            window_handle.hinstance = window_info.info.win.hinstance.cast();
+            window_handle.hwnd = window_info.info.win.window.cast();
 
-        let deice_info = vk::DeviceCreateInfo::builder()
-            .queue_create_infos(&[queue_create_info])
-            .enabled_features(&device_features)
-            .build();
+            let surface = ash_window::create_surface(driver.entry.as_ref().unwrap(), 
+                driver.instance.as_ref().unwrap(), 
+                raw_window_handle::RawDisplayHandle::Windows(display_handle), 
+                raw_window_handle::RawWindowHandle::Win32(window_handle), None)
+                .expect("Failed to create surface!!");
+
+            Some(surface)
+        }
+        
+
+
+        #[cfg(target_os = "linux")]
+        unsafe fn get_surface_a(driver: &mut DriverValues) -> Option<vk::SurfaceKHR> {
+            // Assume wayland!!
+            let mut window_info: sdl2::raw_window_handle::SDL_SysWMinfo = std::mem::zeroed();
+            SDL_GetWindowWMInfo(GAME.window.raw(), &mut window_info);
+
+            let mut display_handle = raw_window_handle::WaylandDisplayHandle::empty();
+
+            display_handle.display = window_info.info.wl.display;
+
+            let mut window_handle = raw_window_handle::WaylandWindowHandle::empty();
+
+            window_handle.surface = window_info.info.wl.surface;
+
+            let surface = ash_window::create_surface(driver.entry.as_ref().unwrap(), 
+                driver.instance.as_ref().unwrap(), 
+                raw_window_handle::RawDisplayHandle::Wayland(display_handle), 
+                raw_window_handle::RawWindowHandle::Wayland(window_handle), None)
+                .expect("Failed to create surface!!");
+            Some(surface)
+        }
+
+        #[cfg(target_os = "macos")]
+        unsafe fn get_surface_a(driver: &mut DriverValues) -> Option<vk::SurfaceKHR> {
+
+            let mut window_info: sdl2::raw_window_handle::SDL_SysWMinfo = std::mem::zeroed();
+            SDL_GetWindowWMInfo(GAME.window.raw(), &mut window_info);
+
+            let mut display_handle = raw_window_handle::AppKitDisplayHandle::empty();
+
+            
+
+            let mut window_handle = raw_window_handle::AppKitWindowHandle::empty();
+
+            window_handle.ns_window = window_info.info.cocoa.window;
+
+            let surface = ash_window::create_surface(driver.entry.as_ref().unwrap(), 
+                driver.instance.as_ref().unwrap(), 
+                raw_window_handle::RawDisplayHandle::AppKit(display_handle), 
+                raw_window_handle::RawWindowHandle::AppKit(window_handle), None)
+                .expect("Failed to create surface!!");
+            Some(surface)
+
+        }
+
+        get_surface_a(driver)
 
     }
 
@@ -410,7 +534,9 @@ impl RenderPipelineSystem{
     }
 
 }
-
+extern "C" {
+    fn SDL_GetWindowWMInfo(window: *mut sdl2::sys::SDL_Window, info: *mut sdl2::raw_window_handle::SDL_SysWMinfo) -> sdl2::sys::SDL_bool;
+}
 
 #[cfg(feature = "vulkan")]
 pub trait VulkanRender {
@@ -421,9 +547,12 @@ pub trait VulkanRender {
 #[cfg(feature = "vulkan")]
 #[derive(Default, Clone)]
 pub struct DriverValues {
+    pub entry: Option<Entry>,
     pub instance: Option<Instance>,
-    pub device: Option<vk::PhysicalDevice>,
-    pub logical_devices : Vec<vk::Device>,
+    pub physical_devices: Vec<vk::PhysicalDevice>,
+    pub logical_devices : Vec<Option<Device>>,
+    pub surface : Option<vk::SurfaceKHR>,
+    pub enable_validation_layers: bool,
 
 }
 

@@ -186,6 +186,7 @@ pub struct Game {
     pub sdl: sdl2::Sdl,
     pub window: sdl2::video::Window,
     pub video: sdl2::VideoSubsystem,
+    pub event_pump: Option<sdl2::EventPump>,
 }
 
 impl Game {
@@ -220,6 +221,7 @@ impl Game {
             sdl: sdl,
             window: window,
             video: video,
+            event_pump: None,
         }
     }
 
@@ -228,7 +230,7 @@ impl Game {
 
         let runner = async{
 
-            let mut event_pump = self.sdl.event_pump().expect("Failed to load event pump!");
+            self.event_pump = Some(self.sdl.event_pump().expect("Failed to load event pump!"));
             let p_render_sys = self.RENDER_SYS.clone();
             let p_entity_sys = self.ENTITY_SYS.clone();
             let renderJoinHandle = std::thread::spawn(|| {RenderPipelineSystem::init(p_render_sys)});
@@ -254,7 +256,7 @@ impl Game {
             Entity::add_component::<components::entity::image_component::Image>(p_entity, def);
             // here we loop for the events
             'running: loop {
-                for event in event_pump.poll_iter() {
+                for event in self.event_pump.as_mut().unwrap().poll_iter() {
                     match event {
                         event::Event::Quit {..} =>  {
                             unsafe{Game::set_status(StatusCode::CLOSE);}
