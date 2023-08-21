@@ -1,5 +1,6 @@
 // TODO: Implement a component registration system to allow for component allocation for entities
-
+#![allow(unused)]
+#![allow(non_snake_case)]
 use std::sync::*;
 
 use crate::common::{engine::gamesys::*, components::entity::*};
@@ -47,7 +48,7 @@ impl ComponentSystem {
         let register = self.component_register.as_mut();
         for (entity_id, mut vec) in register.to_vec()
         {
-            if(entity_id.eq(&entity)){
+            if entity_id.eq(&entity) {
                 vec.push(component);
                 return;
             }
@@ -58,9 +59,9 @@ impl ComponentSystem {
 
     pub fn entity_get_components(&mut self, entity: EntityID) -> Vec<ComponentRef<dyn BaseComponent>> {
 
-        let mut register = self.component_register.to_vec();
+        let register = self.component_register.to_vec();
         for (entity_id, vec) in register {
-            if(entity_id.eq(&entity)){
+            if entity_id.eq(&entity) {
                 return vec.clone();
             }
         }

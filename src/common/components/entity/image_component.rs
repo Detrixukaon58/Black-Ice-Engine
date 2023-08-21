@@ -1,6 +1,7 @@
-use std::sync::Weak;
+#![allow(unused)]
+#![allow(non_snake_case)]
 
-use crate::common::{components::{component_system::*, entity_system::*}, *, filesystem::files::*, vertex::*};
+use crate::common::{components::{component_system::*, entity::entity_system::*}, *, filesystem::files::*, vertex::*};
 
 use serde::*;
 
@@ -14,14 +15,14 @@ pub struct Image {
 impl Base for Image{}
 
 impl engine::gamesys::Reflection for Image {
-    fn registerReflect(&'static self) -> Ptr<Register<>> {
+    fn register_reflect(&'static self) -> Ptr<Register<>> {
         let mut register = Box::new(Register::new(Box::new(self)));
 
         register.addProp(Property { 
             name: Box::new("image_file"), 
             desc: Box::new("Path to image file"), 
             reference: Box::new(&self.image_file), 
-            refType: std::any::TypeId::of::<AssetPath>() });
+            ref_type: std::any::TypeId::of::<AssetPath>() });
 
         Ptr { b: register }
     }

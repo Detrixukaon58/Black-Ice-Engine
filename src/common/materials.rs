@@ -1,12 +1,9 @@
-use std::{any::{TypeId, Any}, collections::HashMap, mem::{MaybeUninit, size_of_val}, path::{Path, PathBuf}, fs, sync::{Arc, Mutex}, str::FromStr, ffi::CString};
+#![allow(unused)]
+use std::{any::*, collections::HashMap};
 
-#[cfg(feature = "opengl")] use ogl33::c_void;
-#[cfg(feature = "vulkan")]use ash::*;
-use serde::ser::*;
+use crate::common::{filesystem::files::*, engine::gamesys::*, *};
 
-use crate::{common::{filesystem::files::*, engine::gamesys::*, *}};
 
-use super::{resources::Resource, matrices::{Matrix33, Matrix34}};
 
 // pub struct ParamDescriptor {
 //     pub name: String,
@@ -35,35 +32,41 @@ pub fn compare(input: &str) -> bool {
     return input.ends_with(".glsl") || input.ends_with(".vert") || input.ends_with(".frag") || input.ends_with(".comp");
 }
 
-
 pub struct Shader{
-    pub fragmentFile: AssetPath,
-    pub vertexFile: AssetPath,
+    pub shader_name: String,
+    pub fragment_file: ShaderFile,
+    pub vertex_file: ShaderFile,
+    pub is_compiled: bool,
 }
 
 impl Shader {
-    fn new(pathToShaders: String) -> Shader {
+    fn new(path_to_shaders: String) -> Shader {
         let mut sub = 0;
-        for i in ((&pathToShaders).len())..0 {
-            if(pathToShaders.chars().nth(i).unwrap() == '\\'){
+        for i in ((&path_to_shaders).len())..0 {
+            if path_to_shaders.chars().nth(i).unwrap() == '\\' {
                 sub = i;
                 break;
             }
         }
-        let fileName = pathToShaders.split_at(sub).1;
-        let fileNameInit = fileName.split(".").collect::<Vec<&str>>()[0];
-        let fragPath = format!("{}\\{}.frag", pathToShaders, fileNameInit);
-        let mut fragFile = AssetPath::new(fragPath);
-        let vertPath = format!("{}\\{}.frag", pathToShaders, fileNameInit);
-        let mut vertFile = AssetPath::new(vertPath);
-        Shader { fragmentFile:  fragFile, vertexFile: vertFile}
+        let file_name = path_to_shaders.split_at(sub).1;
+        let file_name_init = file_name.split(".").collect::<Vec<&str>>()[0];
+        let frag_path = format!("{}\\{}.frag", path_to_shaders, file_name_init);
+        let frag_file = AssetPath::new(frag_path).open_as_file().as_shader_file(shaderc::ShaderKind::Fragment);
+        let vert_path = format!("{}\\{}.frag", path_to_shaders, file_name_init);
+        let vert_file = AssetPath::new(vert_path).open_as_file().as_shader_file(shaderc::ShaderKind::Vertex);
+        Shader {shader_name: String::from(file_name_init), fragment_file:  frag_file, vertex_file: vert_file, is_compiled: false}
     }
 
+    fn compile_shader(&mut self) -> bool {
+        self.is_compiled = self.fragment_file.compile() && self.vertex_file.compile();
+
+        self.is_compiled
+    }
 
     fn read_uniforms(&mut self) -> HashMap<String, Box<&'static dyn Base>> {
-        let mut hash: HashMap<String, Box<&'static dyn Base>> = HashMap::new();
-        let mut frag_file = self.fragmentFile.open_as_file();
-        let mut line = frag_file.read();
+        let hash: HashMap<String, Box<&'static dyn Base>> = HashMap::new();
+        let frag_file = &self.fragment_file;
+        
 
 
         return hash;
@@ -72,10 +75,10 @@ impl Shader {
 
 impl Clone for Shader {
     fn clone(&self) -> Self {
-        let mut fragFile = self.fragmentFile.clone();
+        let frag_file = self.fragment_file.clone();
 
-        let mut vertFile = self.vertexFile.clone();
-        let mut new_shader = Shader { fragmentFile:  fragFile, vertexFile: vertFile};
+        let vert_file = self.vertex_file.clone();
+        let new_shader = Shader {shader_name: self.shader_name.clone(), fragment_file:  frag_file, vertex_file: vert_file, is_compiled: self.is_compiled.clone()};
         return new_shader;
     }
 }
@@ -91,7 +94,7 @@ pub trait ShaderDescriptor{
 pub enum ShaderType {
     Integer(i32),
     Boolean(bool),
-    Unsigned_Integer(u32),
+    UnsignedInteger(u32),
     Float(f32),
     Double(f64),
     Vec3([f32; 3]),
@@ -106,6 +109,17 @@ pub enum ShaderType {
     DVec3([f64; 3]),
     DVec4([f64; 4]),
     DVec2([f64; 2]),
+    Sampler2D(Vec<f32>),
+
+}
+
+#[derive(Clone)]
+pub enum ShaderDataHint {
+    Uniform,
+    In,
+    Out,
+    InOut,
+    Buffer,
 
 }
 
@@ -113,7 +127,7 @@ pub enum ShaderType {
 pub struct Material {
     
     pub shader: Shader,
-    pub shaderDescriptor: HashMap<String, Box<ShaderType>>,
+    pub shader_descriptor: HashMap<String, (Box<ShaderType>, ShaderDataHint)>,
 
 }
 
@@ -122,11 +136,11 @@ impl Clone for Material {
     fn clone(&self) -> Self {
         let mut mat = Material::new();
         mat.shader = self.shader.clone();
-        mat.shaderDescriptor = HashMap::new();
-        for param in self.shaderDescriptor.keys() {
-            let value = self.shaderDescriptor.get(param).unwrap().clone();
+        mat.shader_descriptor = HashMap::new();
+        for param in self.shader_descriptor.keys() {
+            let value = self.shader_descriptor.get(param).unwrap().clone();
             
-            mat.shaderDescriptor.insert(param.to_string(), Box::new((*value).clone()));
+            mat.shader_descriptor.insert(param.to_string(), (Box::new((*value.0).clone()), value.1.clone()));
         }
         return mat;
     }
@@ -136,52 +150,16 @@ impl Base for Material{}
 
 impl New<Material> for Material {
     fn new() -> Material {
-        return Material {shader: Shader::new("ASSET:/shaders/slim-shader.shad".to_string()),shaderDescriptor: HashMap::new() };
+        return Material {shader: Shader::new("ASSET:/shaders/slim-shader.shad".to_string()),shader_descriptor: HashMap::new() };
     }
 }
 
 impl Reflection for Material{
-    fn registerReflect(&'static self) -> Ptr<Register<>> {
-        let mut register = Box::new(Register::new(Box::new(self)));
+    fn register_reflect(&'static self) -> Ptr<Register<>> {
+        let _register = Box::new(Register::new(Box::new(self)));
         
         
 
-        return Ptr {b: register};
+        return Ptr {b: _register};
     } 
-}
-
-#[cfg(feature = "vulkan")]
-pub trait BakeVulkan {
-    fn bake(&mut self, device: Option<vk::PhysicalDevice>);
-}
-
-#[cfg(feature = "vulkan")]
-impl BakeVulkan for Material {
-    fn bake(&mut self, device: Option<vk::PhysicalDevice>){
-        unsafe{
-            let device = device.unwrap();
-
-        }
-    }
-}
-
-fn include_shaders() -> glsl_include::Context<'static> {
-    let path: String = APP_DIR.clone().to_owned() + "\\assets\\shaders\\";
-    let directory = fs::read_dir(path).unwrap();
-    let mut context: glsl_include::Context = glsl_include::Context::new();
-    for mut path in directory {
-        let mut path_unwraped = path.unwrap();
-        let path_path = path_unwraped.path();
-        if(path_path.is_file() && compare(path_unwraped.file_name().to_str().unwrap())){
-            let mut path_file = path_unwraped.file_name();
-            let mut path_file_str = path_file.as_os_str().to_str().unwrap();
-            
-            let mut path_data = path_path.display();
-            let mut path_data_string = path_data.to_string();
-            let mut path_data_str = path_data_string.as_str();
-            context.include(path_file_str, path_data_str);
-        }
-    
-    }
-    return context;
 }

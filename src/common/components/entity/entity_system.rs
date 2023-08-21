@@ -1,10 +1,12 @@
 // TODO: Make an entity registration system to allow for components to be registered to an entity
-
+#![allow(unused)]
 use std::{any::*, thread::JoinHandle, collections::*, sync::{*, atomic::AtomicU32}, future::*, pin::*, ops::DerefMut};
 use serde::*;
 use bitmask_enum::*;
 
 use crate::common::{engine::{gamesys::*, threading::ThreadData}, vertex::*, angles::*, components::{component_system::*, entity}};
+
+use colored::*;
 
 use self::entity_event::*;
 
@@ -39,26 +41,26 @@ impl Default for Entity {
 }
 
 impl Reflection for Entity{
-    fn registerReflect(&'static self) -> Ptr<Register<>> {
+    fn register_reflect(&'static self) -> Ptr<Register<>> {
         let mut registration:  Box<Register> = Box::new(Register::new(Box::new(self)));
 
         registration.addProp(Property { 
             name: Box::new("position"), 
             desc: Box::new("position of the Entity"), 
             reference: Box::new(&self.position), 
-            refType: TypeId::of::<Vec3>() 
+            ref_type: TypeId::of::<Vec3>() 
         });
         registration.addProp(Property { 
             name: Box::new("rotation"), 
             desc: Box::new("rotation of the Entity"), 
             reference: Box::new(&self.rotation), 
-            refType: TypeId::of::<Quat>() 
+            ref_type: TypeId::of::<Quat>() 
         });
         registration.addProp(Property { 
             name: Box::new("scale"), 
             desc: Box::new("scale of the Entity"), 
             reference: Box::new(&self.scale), 
-            refType: TypeId::of::<Vec3>() 
+            ref_type: TypeId::of::<Vec3>() 
         });
 
         return Ptr {b: registration};
@@ -68,6 +70,8 @@ impl Reflection for Entity{
 impl Entity {
     pub fn add_component<T>(this: ComponentRef<Self>, definition: ConstructorDefinition) -> ComponentRef<T> where T: BaseComponent + Constructor<T> {
         unsafe{
+
+            println!("{}", "Adding component to Entity!!".bright_red());
             let p_entity = this.clone();
             let component = T::construct(p_entity, &definition).unwrap();
             'test: loop{
@@ -82,12 +86,23 @@ impl Entity {
                 drop(comp_sys);
                 break;
             }
+            println!("{}", "Added component to Entity!!".bright_red());
             component
         }
     }
 
     pub fn init<'a>(this: ComponentRef<Self>) -> i32 {
         Self::processing(this)
+    }
+
+    pub fn collect_component(p_this: ComponentRef<Vec<ComponentRef<dyn BaseComponent>>>, count: usize) -> ComponentRef<dyn BaseComponent> {
+        let this = p_this.lock().unwrap();
+        return this[count].clone();
+    }
+
+    fn len(p_this: ComponentRef<Vec<ComponentRef<dyn BaseComponent>>>) -> usize {
+        let this = p_this.lock().unwrap();
+        return this.len().clone();
     }
 
     fn processing(p_this: ComponentRef<Self>) -> i32 {
@@ -105,13 +120,14 @@ impl Entity {
                     match data {
                         EventThreadData::Event(event) => {
                             let p_comp_sys = this.component_system.clone();
-                            let comp_sys = p_comp_sys.lock().unwrap();
-                            for p_component in  comp_sys.to_vec(){
-                                
+                            let mut i = 0;
+                            while i < Self::len(p_comp_sys.clone()){
+                                let p_component = Self::collect_component(p_comp_sys.clone(), i);
                                 let mut component = p_component.lock().unwrap();
                                 if(component.get_event_mask().contains(event.event_flag)){
                                     component.process_event(&event);
                                 }
+                                i += 1;
                             }
                             
                         },
@@ -164,6 +180,7 @@ pub struct EntityParams {
 }
 
 pub mod entity_event{
+    
     use std::collections::HashMap;
     use std::any::*;
 
@@ -346,7 +363,7 @@ impl EntitySystem {
             let entity = p_entity.lock().unwrap();
             let p_recv = entity.thread_reciever.clone();
             let mut recv = p_recv.lock().unwrap();
-            recv.push(EventThreadData::KillEvent());
+            recv.insert(0, EventThreadData::KillEvent());
             drop(recv);
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
@@ -410,7 +427,7 @@ impl EntitySystem {
         for pp_ent in p_ents.to_vec() {
             let p_ent = pp_ent.clone();
             let ent = p_ent.lock().unwrap();
-            if(ent.entity_id == entity_id){
+            if ent.entity_id == entity_id {
                 entity = Some(pp_ent.clone());
                 break;
             }

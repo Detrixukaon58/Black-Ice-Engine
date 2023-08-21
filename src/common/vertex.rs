@@ -1,6 +1,6 @@
 
-use std::{ops, f32::{consts::PI}, convert::TryFrom, fmt::{Display, Formatter, Result}, any::Any };
-use crate::{common::engine::gamesys::*};
+use std::{ops, f32::consts::PI, convert::TryFrom, fmt::{Display, Formatter, Result}};
+use crate::common::engine::gamesys::*;
 use serde::*;
 use super::matrices::Vec4;
 
@@ -74,6 +74,7 @@ impl V3New<i32> for Vec3 {
         return Vec3::new(i16::try_from(_x).ok(), i16::try_from(_y).ok(), i16::try_from(_z).ok());
     }
 }
+#[allow(dead_code)]
 mod mathf {
 
     pub fn sin(a: f32) -> f32{

@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use std::any::Any;
 
 use crate::common::{mesh::*, engine::gamesys::*, vertex::*, angles::Quat};
@@ -14,11 +16,11 @@ struct MeshComponent {
 impl Base for MeshComponent{}
 
 impl Reflection for MeshComponent{
-    fn registerReflect(&'static self) -> Ptr<Register<>> {
+    fn register_reflect(&'static self) -> Ptr<Register<>> {
         let mut register = Box::new(Register::new(Box::new(self)));
         //register.addProp(Property { name: "mesh", desc: "The Mesh", reference: Box::new(&self.mesh), refType: self.mesh.type_id() });
         
-        register.addPointer(Pointer{name: Box::new("mesh"), desc: Box::new("The Mesh Pointer"), reference: self.mesh.registerReflect(), refType: self.mesh.type_id()});
+        register.addPointer(Pointer{name: Box::new("mesh"), desc: Box::new("The Mesh Pointer"), reference: self.mesh.register_reflect(), ref_type: self.mesh.type_id()});
 
         return Ptr {b: register};
     }

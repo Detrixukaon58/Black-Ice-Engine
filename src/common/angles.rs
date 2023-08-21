@@ -1,7 +1,9 @@
+#[allow(unused_imports)]
 use crate::common::vertex::*;
 use serde::*;
 use super::engine::gamesys::Base;
 
+#[allow(dead_code)]
 #[derive(Copy, Clone)]
 pub struct Ang3 {
     y : f32,

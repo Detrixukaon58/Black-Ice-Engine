@@ -2,11 +2,9 @@ use std::any::Any;
 use std::fmt::{Display, Error};
 use std::fs::{*, self};
 use std::io::{prelude::*, BufReader};
-use std::path::Path;
-use std::ptr::*;
 use serde::*;
 
-use crate::common::{APP_DIR, concat_str};
+use crate::common::{APP_DIR, materials};
 use crate::common::engine::gamesys::*;
 
 
@@ -45,7 +43,7 @@ impl AssetPath {
     }
 
     pub fn get_file_ext(&mut self) -> String{
-        let mut temp = self.get_file_name();
+        let temp = self.get_file_name();
         let a: Vec<&str> = temp.split(".").collect();
         String::from(*a.last().unwrap())
     }
@@ -66,14 +64,14 @@ pub struct FileSys{
 impl Base for FileSys {}
 impl Base for Option<File> {}
 impl Reflection for FileSys {
-    fn registerReflect(&'static self) -> Ptr<Register<>> {
+    fn register_reflect(&'static self) -> Ptr<Register<>> {
         let mut register = Box::new(Register::new(Box::new(self)));
         
         register.addProp(Property{
             name: Box::new("path"), 
             desc: Box::new("Path of file."), 
             reference: Box::new(&self.path), 
-            refType: self.path.type_id()
+            ref_type: self.path.type_id()
         });
         return Ptr {b: register};
     }
@@ -82,7 +80,7 @@ impl Reflection for FileSys {
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub enum MFType{
 
-    NO_EXT,
+    NOEXT,
     FBX,
     OBJ,
     MTL,
@@ -94,10 +92,10 @@ pub enum MFType{
 }
 
 trait Handlers {
-    fn fbxHandler(&mut self) -> String;
-    fn objHandler(&mut self) -> String;
-    fn mtlHandler(&mut self) -> String;
-    fn pngHandler(&mut self) -> String;
+    fn fbx_handler(&mut self) -> String;
+    fn obj_handler(&mut self) -> String;
+    fn mtl_handler(&mut self) -> String;
+    fn png_handler(&mut self) -> String;
 }
 
 pub trait Reader<U> {
@@ -118,14 +116,14 @@ impl FileSys{
         let full_path = format!("{}\\{}", ASSET_PATH, _path[7..].to_owned());
         let dir = fs::metadata(full_path.clone()).unwrap();
         
-        if(dir.is_file()){
+        if dir.is_file() {
             self.f = Option::Some(File::open(full_path.as_str()).expect(format!("File {} not found!", _path[7..].to_owned()).as_str()));// format "ASSET:\\path\\to\\file" => "DRIVE:\\path\\to\\assets\\path\\to\\file"
             self.path = String::from(_path);
             self.b = Option::Some(BufReader::new((*self.f.as_ref().unwrap()).try_clone().expect("Couldn't clone file for BufReader!!")));
             self.is_file = true;
             
         }
-        else if (dir.is_dir()){
+        else if dir.is_dir() {
             self.p = Option::Some(fs::read_dir(full_path).unwrap());
             self.path = String::from(_path);
             self.is_dir = true;
@@ -133,40 +131,40 @@ impl FileSys{
         }
     }
 
-    pub fn checkFileExt(&self) -> MFType{
+    pub fn check_file_ext(&self) -> MFType{
         
-        let mut lastI = 0;
+        let mut last_i = 0;
 
         for i in 0..(self.path.len()){
 
-            if(self.path.chars().nth(i).unwrap() == '.'){
+            if self.path.chars().nth(i).unwrap() == '.' {
 
-                lastI = i;
+                last_i = i;
 
             }
             
         }
 
-        if(lastI == 0){
+        if last_i == 0 {
             return MFType::UNKNOWN;
         }
 
-        let ext = self.path.get(lastI+1..).unwrap();
-        let mut mf = MFType::NO_EXT;
+        let ext = self.path.get(last_i+1..).unwrap();
+        let mut mf = MFType::NOEXT;
         
-        if(ext.eq("fbx") || ext.eq(".fbx")){
+        if ext.eq("fbx") || ext.eq(".fbx") {
             mf = MFType::FBX;
         }
-        if(ext.eq("png") || ext.eq(".png")){
+        if ext.eq("png") || ext.eq(".png") {
             mf = MFType::PNG;
         }
-        if(ext.eq(".obj") || ext.eq("obj")){
+        if ext.eq(".obj") || ext.eq("obj") {
             mf = MFType::OBJ;
         }
-        if(ext.eq("mtl") || ext.eq(".mtl")){
+        if ext.eq("mtl") || ext.eq(".mtl") {
             mf = MFType::MTL;
         }
-        if(ext.eq(".shad") || ext.eq("shad")){
+        if ext.eq(".shad") || ext.eq("shad") {
             mf = MFType::SHADER;
         }
         return mf;
@@ -176,23 +174,111 @@ impl FileSys{
 
 }
 
+#[derive(Clone)]
+pub struct ShaderFile {
+    pub code: Vec<u32>,
+    pub file: Vec<u8>,
+    pub shader_kind: shaderc::ShaderKind,
+    pub shader_path: String,
+}
+
+impl ShaderFile {
+    
+    pub fn compile(&mut self) -> bool {
+        let result = std::panic::catch_unwind(||{
+
+
+            let include_context = FileSys::include_shaders();
+            let glsl_buff = include_context.expand(std::str::from_utf8(self.file.as_slice()).unwrap()).expect("Failed to load Shader File!!");
+            let compiler = shaderc::Compiler::new().unwrap();
+            let compiled_code = compiler.compile_into_spirv(&glsl_buff.as_str(), self.shader_kind, &self.shader_path.as_str(), "main", None)
+                .expect("Failed to compile Shader");
+            
+            compiled_code
+        
+        
+        });
+
+        match result {
+            Ok(v) => {
+                self.code = v.as_binary().to_vec();
+                true
+            },
+            Err(_) => false
+        }
+    }
+
+}
+
+pub trait AsShaderFile {
+    fn as_shader_file(&mut self, kind: shaderc::ShaderKind) -> ShaderFile;
+    fn include_shaders() -> glsl_include::Context<'static> ;
+}
+
+impl AsShaderFile for FileSys {
+    fn as_shader_file(&mut self, kind: shaderc::ShaderKind) -> ShaderFile {
+        let reader = self.b.as_ref().unwrap();
+        let file_buff = std::str::from_utf8(reader.buffer()).unwrap();
+        let include_context = Self::include_shaders();
+        let glsl_buff = include_context.expand(file_buff).expect("Failed to load Shader File!!");
+        let compiler = shaderc::Compiler::new().unwrap();
+        let compiled_code = compiler.compile_into_spirv(&glsl_buff.as_str(), kind, self.path.as_str(), "main", None).expect("Failed to compile Shader");
+
+        ShaderFile { code: compiled_code.as_binary().to_vec(), file: file_buff.as_bytes().to_vec() , shader_kind: kind, shader_path: self.path.clone()}
+    }
+
+    fn include_shaders() -> glsl_include::Context<'static> {
+        let path: String = APP_DIR.clone().to_owned() + "\\assets\\shaders\\";
+        let mut directory = fs::read_dir(path).unwrap();
+        let mut context: glsl_include::Context = glsl_include::Context::new();
+        let mut path_stack = Vec::<ReadDir>::new();
+        let mut current_path = directory.next();
+        loop {
+            let path_unwraped = current_path.unwrap().unwrap();
+            let path_path = path_unwraped.path();
+            if path_path.is_file() && materials::compare(path_unwraped.file_name().to_str().unwrap()) {
+                let path_file = path_unwraped.file_name();
+                let path_file_str = path_file.as_os_str().to_str().unwrap();
+                
+                let path_data = path_path.display();
+                let path_data_string = path_data.to_string();
+                let path_data_str = path_data_string.as_str();
+                context.include(path_file_str, path_data_str);
+            }
+            else if path_path.is_dir() && !path_path.ends_with(".shad"){
+                path_stack.push(directory);
+                directory = path_path.read_dir().unwrap();
+            }
+            current_path = directory.next();
+            if current_path.is_none() {
+                if path_stack.is_empty() {
+                    break;
+                }
+                directory = path_stack.pop().unwrap();
+                current_path = directory.next();
+            }
+        }
+        return context;
+    }
+}
+
 impl Reader<String> for FileSys {
     fn read(&mut self) -> String {
 
         let mut result:String = String::from("");
 
-        match self.checkFileExt() {
+        match self.check_file_ext() {
             MFType::FBX=>{
-                result = self.fbxHandler();
+                result = self.fbx_handler();
             },
             MFType::OBJ=>{
-                result = self.objHandler();
+                result = self.obj_handler();
             },
             MFType::MTL=>{
-                result = self.mtlHandler();
+                result = self.mtl_handler();
             },
             MFType::PNG=>{
-                result = self.pngHandler();
+                result = self.png_handler();
             }
             _=>{
 
@@ -207,19 +293,19 @@ impl Reader<String> for FileSys {
 
         let mut result:String = String::from("");
 
-        match self.checkFileExt() {
+        match self.check_file_ext() {
             MFType::FBX=>{
-                result = self.fbxHandler();
+                result = self.fbx_handler();
             },
             MFType::OBJ=>{
-                result = self.objHandler();
+                result = self.obj_handler();
             },
             MFType::MTL=>{
-                result = self.mtlHandler();
+                result = self.mtl_handler();
             },
             MFType::PNG=>{
-                result = self.pngHandler();
-            }
+                result = self.png_handler();
+            },
             _=>{
 
             }
@@ -230,20 +316,20 @@ impl Reader<String> for FileSys {
 
     /// This gets the path for each file in the directory
     fn read_dir(&mut self) -> Result<String, Error> {
-        if(self.i == self.total_len){
+        if self.i == self.total_len {
             panic!("End of Directory!");
         }
-        if(!self.is_dir){
+        if !self.is_dir {
             panic!("Not a Directory!!");
         }
         let mut entry: String = String::from("null");
-        let mut j = 0;
-        for mut path in self.p.as_mut().unwrap() {
-            if(j == self.i){
+        let j = 0;
+        for path in self.p.as_mut().unwrap() {
+            if j == self.i {
                 entry = path.unwrap().path().canonicalize().unwrap().display().to_string();
             }
         }
-        if(entry.eq("null")){
+        if entry.eq("null") {
             panic!("Error trying ot open file. Must be a programatical error. Please contact the developer!")
         }
         self.i +=1;
@@ -253,24 +339,24 @@ impl Reader<String> for FileSys {
 }
 
 impl Handlers for FileSys{
-    fn fbxHandler(&mut self) -> String {
+    fn fbx_handler(&mut self) -> String {
 
         unimplemented!();
     }
-    fn mtlHandler(&mut self) -> String {
+    fn mtl_handler(&mut self) -> String {
         unimplemented!()
     }
-    fn objHandler(&mut self) -> String {
-        let mut buff = self.b.as_mut().unwrap();
+    fn obj_handler(&mut self) -> String {
+        let buff = self.b.as_mut().unwrap();
         let mut result = String::from("");
 
         (*buff).read_to_string(&mut result).expect("Couldn't read anything!!");
         return result;
     }
-    fn pngHandler(&mut self) -> String {
-        let mut buff = self.b.as_mut().unwrap();
+    fn png_handler(&mut self) -> String {
+        let buff = self.b.as_mut().unwrap();
         let mut temp: Vec<u8> = vec![];
-        let mut result = String::from("");
+        let result = String::from("");
 
         (*buff).read_to_end(&mut temp).expect("Couldn't read anything!!");
         return result;
@@ -278,6 +364,7 @@ impl Handlers for FileSys{
 
 }
 
+#[allow(unused_assignments)]
 impl Display for MFType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 
@@ -296,7 +383,7 @@ impl Display for MFType {
             &MFType::PNG=>{
                 name = String::from("PNG");
             },
-            &MFType::NO_EXT=>{
+            &MFType::NOEXT=>{
                 name = String::from("NO_EXT");
             },
             &MFType::UNKNOWN=>{

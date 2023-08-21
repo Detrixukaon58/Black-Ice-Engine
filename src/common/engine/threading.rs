@@ -1,3 +1,4 @@
+#![allow(unused)]
 use std::{thread::{Thread, JoinHandle}, any::{Any, TypeId}, sync::{atomic::AtomicBool, Arc, Mutex}, ops::IndexMut};
 
 use crate::common::{vertex::*, angles::*, components::{entity::entity_system::*, component_system::{BaseComponent, ConstructorDefinition}}, engine::*, matrices::*};
@@ -49,7 +50,7 @@ impl Threader {
         self.handle.take().expect("failed to stop thread.").join().expect("failed to join thread.")
     }
 
-    pub fn isAlive(&mut self) -> bool {
+    pub fn is_alive(&mut self) -> bool {
         self.alive.load(std::sync::atomic::Ordering::SeqCst)
     }
 

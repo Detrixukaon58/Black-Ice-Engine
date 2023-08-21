@@ -72,7 +72,7 @@ mod resources{
     #[derive(Clone)]
     pub struct Resource {
         
-        resID: ResID,
+        _res_id: ResID,
 
 
     }
@@ -86,8 +86,8 @@ mod resources{
     /// This will provide a set of functions that you must implement so that the Game Engine can create and save Resources.
     pub trait ResourceTrait {
 
-        fn GetResource() -> &'static Resource;
-        fn SetResource(_resource: &'static Resource);
+        fn get_resource() -> &'static Resource;
+        fn set_resource(_resource: &'static Resource);
 
     }
 }

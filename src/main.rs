@@ -1,4 +1,5 @@
-
+#![allow(unused)]
+#![allow(non_snake_case)]
 use futures::*;
 use std::{mem::{size_of_val, size_of}, str::SplitWhitespace, ffi::{CString, OsString}, any::TypeId, fs, future::*};
 use bytemuck::try_cast_ref;

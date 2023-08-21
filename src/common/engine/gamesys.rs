@@ -1,3 +1,5 @@
+#![allow(unused)]
+#![allow(non_snake_case)]
 use std::{any::TypeId, future};
 use std::collections::HashMap;
 use std::any::Any;
@@ -39,7 +41,7 @@ pub struct Registry {
 }
 
 impl Registry<> {
-    fn addClass(&mut self, class: Box<Register<>>){
+    fn add_class(&mut self, class: Box<Register<>>){
         
 
         self.reg.insert(Box::new((*class.name)), class);
@@ -48,13 +50,13 @@ impl Registry<> {
 
 #[derive(Clone)]
 pub struct Register<>{
-    pub RFID: Box<&'static str>,
+    pub rfid: Box<&'static str>,
     pub name : Box<&'static str>,
     pub desc : Box<&'static str>,
     props: HashMap<String, Box<Property<>>>,
     pointers: HashMap<String, Box<Pointer<>>>,
     funcs: HashMap<String, Box<Function<>>>,
-    pub typeId: TypeId,
+    pub type_id: TypeId,
     pub reference: Box<&'static dyn Base>
 }
 
@@ -63,16 +65,16 @@ pub struct Property<>{
     pub name: Box<&'static str>,
     pub desc: Box<&'static str>,
     pub reference: Box<&'static dyn Base>,
-    pub refType: TypeId
+    pub ref_type: TypeId
 }
 
 #[derive(Clone)]
 pub struct Function<> {
     pub name: Box<&'static str>,
     pub desc: Box<&'static str>,
-    pub paramTypes: Vec<TypeId>,
+    pub param_types: Vec<TypeId>,
     pub reference: Box<&'static dyn Base>,
-    pub outputType: TypeId
+    pub output_type: TypeId
 
 }
 
@@ -82,14 +84,14 @@ pub struct Pointer<> {
     pub name: Box<&'static str>,
     pub desc: Box<&'static str>,
     pub reference: Ptr<Register>,
-    pub refType: TypeId
+    pub ref_type: TypeId
 }
 
 pub trait Registration<> {
 
     fn new<T: Base>(reference: Box<&'static T>) -> Register<>;
 
-    fn register<T: Base>(&self, ourReg: &dyn Fn() -> Box<Register<>>);
+    fn register<T: Base>(&self, our_reg: &dyn Fn() -> Box<Register<>>);
 
     fn getProp(&self, name: &str) -> Box<&dyn Any>;
     fn getFunc(&self, name: &str) -> Box<&dyn Any>;
@@ -102,12 +104,12 @@ pub trait Registration<> {
 impl Registration<> for Register<> {
 
     fn new<T: Base>(reference: Box<&'static T>) -> Register<> {
-        return Register { RFID: Box::new(""),
+        return Register { rfid: Box::new(""),
             name: Box::new(""), desc: Box::new(""),
             props: HashMap::<String, Box<Property<>>>::new(),
             pointers: HashMap::<String, Box<Pointer<>>>::new(),
             funcs: HashMap::<String, Box<Function<>>>::new(),
-            typeId: TypeId::of::<T>(),
+            type_id: TypeId::of::<T>(),
             reference: Box::new(*reference)};
     }
 
@@ -157,7 +159,7 @@ pub struct Ptr<T> {
 }
 
 pub trait Reflection: Base {
-    fn registerReflect(&'static self) -> Ptr<Register<>>;
+    fn register_reflect(&'static self) -> Ptr<Register<>>;
 }
 
 
@@ -198,7 +200,7 @@ impl Game {
         let reg = components::component_system::ComponentRef_new(Registry {reg: Lazy::new(
             || {HashMap::<Box<&str>,Box<Register>>::new()}
         )});
-        let renderSys = components::component_system::ComponentRef_new(RenderPipelineSystem::new());
+        let render_sys = components::component_system::ComponentRef_new(RenderPipelineSystem::new());
 
         let sdl = init().expect("Failed to initialise SDL!!");
         let video = sdl.video().expect("Failed to get video.");
@@ -215,7 +217,7 @@ impl Game {
         Game { 
             gameName: Arc::new(Mutex::new(String::from("Game Name"))), 
             REGISTRAR: reg, 
-            RENDER_SYS: renderSys, 
+            RENDER_SYS: render_sys, 
             ENTITY_SYS: ent_sys,
             STATUS: Arc::new(Mutex::new(StatusCode::INITIALIZE)),
             sdl: sdl,
@@ -233,8 +235,8 @@ impl Game {
             self.event_pump = Some(self.sdl.event_pump().expect("Failed to load event pump!"));
             let p_render_sys = self.RENDER_SYS.clone();
             let p_entity_sys = self.ENTITY_SYS.clone();
-            let renderJoinHandle = std::thread::spawn(|| {RenderPipelineSystem::init(p_render_sys)});
-            let entity_Join_Handle = std::thread::spawn(|| {EntitySystem::init(p_entity_sys)});
+            let render_join_handle = std::thread::spawn(|| {RenderPipelineSystem::init(p_render_sys)});
+            let entity_join_handle = std::thread::spawn(|| {EntitySystem::init(p_entity_sys)});
             let p_ent_sys_2 = self.ENTITY_SYS.clone();
             let mut ent_sys_2 = p_ent_sys_2.lock().unwrap();
             let mut entity_params = components::entity::entity_system::EntityParams {
@@ -268,8 +270,10 @@ impl Game {
                 }
             }
 
-            renderJoinHandle.join();
-            entity_Join_Handle.join();
+            self.window.hide();
+
+            render_join_handle.join();
+            entity_join_handle.join();
             println!("Exiting Game!!");
         };
 

@@ -13,7 +13,7 @@ path="src/libs.rs"
 crate-type = ["cdylib"]
 
 [[bin]]
-name = "black_ice_execultable"
+name = "black_ice_executable"
 path = "src/main.rs"
 
 [dependencies]
@@ -29,11 +29,13 @@ raw-window-handle = "0.5"
 imagine = "0.5.1"
 once_cell = "1.17.0"
 glsl-include = "0.3"
+glsl = "*"
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json ={  version = "*"}
 async-trait = {version = "*"}
 futures = { version = "*", features = ["thread-pool"] }
 bitmask-enum = { version = "*"}
+colored = { version = "*"}
 
 [features]
 vulkan = ["dep:ash", "dep:shaderc", "dep:ash-window", "sdl2/raw-window-handle"]

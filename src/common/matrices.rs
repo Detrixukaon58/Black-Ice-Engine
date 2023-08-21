@@ -44,9 +44,9 @@ pub trait BasicMatrixOps<T> {
 
 pub trait BasicMatrix {
     fn transform(&self, rhs: Vec3) -> Vec3;
-    fn getX(&self) -> Vec4;
-    fn getY(&self) -> Vec4;
-    fn getZ(&self) -> Vec4;
+    fn get_x(&self) -> Vec4;
+    fn get_y(&self) -> Vec4;
+    fn get_z(&self) -> Vec4;
 }
 
 impl ops::Mul for Matrix34 {

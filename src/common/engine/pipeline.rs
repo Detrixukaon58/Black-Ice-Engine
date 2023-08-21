@@ -1,4 +1,5 @@
 #![feature(mutex_unlock)]
+#![allow(unused)]
 use std::any::Any;
 use raw_window_handle::HasRawWindowHandle;
 use std::cell::RefCell;
@@ -10,11 +11,11 @@ use std::future::*;
 use sdl2::*;
 use async_trait::*;
 use winit::dpi::Pixel;
-use vk::Handle;
+
 
 extern crate raw_window_handle;
 
-use crate::common::materials::BakeVulkan;
+use crate::common::materials::*;
 use crate::common::matrices::*;
 use crate::common::mesh::*;
 use crate::common::engine::*;
@@ -23,16 +24,16 @@ use crate::common::vertex::*;
 use super::gamesys::*;
 use super::threading::*;
 
-#[cfg(feature = "vulkan")] use ash::*;
+#[cfg(feature = "vulkan")] use super::vulkan::*;
 #[cfg(feature = "opengl")] use ogl33::*;
 #[cfg(feature = "gles")] use opengles::*;
 
 pub struct Pipeline {
     id: i32,
     pub name: String,
-    meshs: Vec<Arc<Mutex<Mesh>>>,
+    pub meshs: Vec<Arc<Mutex<Mesh>>>,
     pub layer: usize,
-    device: Option<vk::PhysicalDevice>,
+    pub driver: Arc<Mutex<Option<DriverValues>>>,
 }
 
 #[derive(Clone)]
@@ -44,8 +45,8 @@ pub struct PipelineParams {
 unsafe impl Send for Pipeline {}
 
 impl Pipeline {
-    pub fn register_mesh(&mut self, mesh: Arc<Mutex<Mesh>>){
-        self.meshs.push(mesh);
+    pub fn register_mesh(&mut self, p_mesh: Arc<Mutex<Mesh>>){
+        self.meshs.push(p_mesh);
     }
 }
 
@@ -55,24 +56,11 @@ pub struct RenderPipelineSystem {
     pub pipelines: Vec<Arc<Mutex<Pipeline>>>,
     counter: AtomicI32,
     system_status: Arc<Mutex<gamesys::StatusCode>>,
-    threadCount: usize,
+    thread_count: usize,
     threads: Dict<usize, Arc<Mutex<Threader>>>,
     thread_reciever: Arc<Mutex<Vec<ThreadData>>>,
-    driver_vals: Option<DriverValues>,
+    driver_vals: Arc<Mutex<Option<DriverValues>>>,
 
-}
-
-#[derive(Clone, Default)]
-struct QueueFamiltyIdices {
-    graphics_family: Option<u32>,
-    present_family: Option<u32>,
-    
-}
-
-impl QueueFamiltyIdices {
-    pub fn is_complete(&self) -> bool {
-        self.graphics_family.is_some() && self.present_family.is_some()
-    }
 }
 
 impl RenderPipelineSystem{
@@ -85,10 +73,11 @@ impl RenderPipelineSystem{
             name: params.name.clone(),
             meshs: Vec::new(),
             layer: params.layer,
-            device: Some(this.driver_vals.as_ref().unwrap().physical_devices[0])
+            driver: this.driver_vals.clone(),
         };
-        if(this.threadCount < params.layer){
-            this.threadCount = params.layer;
+        
+        if(this.thread_count < params.layer){
+            this.thread_count = params.layer;
         }
         this.pipelines.push(Arc::new(Mutex::new(pipeline)));
         
@@ -109,23 +98,23 @@ impl RenderPipelineSystem{
     }
 
     pub fn new() -> RenderPipelineSystem {
-        let pipSys = RenderPipelineSystem {
+        let pip_sys = RenderPipelineSystem {
             pipelines: Vec::new(),
             counter: AtomicI32::new(1),
             system_status: Arc::new(Mutex::new(gamesys::StatusCode::RUNNING)),
-            threadCount: 0,
+            thread_count: 0,
             threads: Dict::<usize, Arc<Mutex<Threader>>>::new(),
             thread_reciever: Arc::new(Mutex::new(Vec::new())),
-            driver_vals: Some(DriverValues::default()),
+            driver_vals: crate::common::components::component_system::ComponentRef_new(Some(DriverValues::default())),
         };
-        return pipSys;
+        return pip_sys;
     }
 
     pub fn processing<'a>(this: &'a mut Self) -> i32{
         unsafe{
             
             // Initialise pipeline stuff
-            #[cfg(feature = "vulkan")]RenderPipelineSystem::init_vulkan(this);
+            #[cfg(feature = "vulkan")]DriverValues::init_vulkan(this.driver_vals.lock().unwrap().as_mut().unwrap());
             #[cfg(feature = "opengl")]RenderPipelineSystem::init_ogl(this);
             #[cfg(feature = "gles")]RenderPipelineSystem::init_gles(this);
              // prebake step (only for when we have a better file system)
@@ -205,278 +194,6 @@ impl RenderPipelineSystem{
 
     //region Vulkan Render 
 
-    #[cfg(feature = "vulkan")]
-    unsafe fn init_vulkan(this:&mut Self)  {
-        use winit::dpi::Pixel;
-        
-        let entry = ash::Entry::load().expect("Failed to get entry!");
-        std::thread::sleep(std::time::Duration::from_secs(1));
-        println!(
-            "{} - Vulkan Instance {}.{}.{}",
-            "cock and balls",
-            vk::api_version_major(entry.try_enumerate_instance_version().unwrap().unwrap()),
-            vk::api_version_minor(entry.try_enumerate_instance_version().unwrap().unwrap()),
-            vk::api_version_patch(entry.try_enumerate_instance_version().unwrap().unwrap())
-        );
-        
-
-        let mut appInfo = vk::ApplicationInfo::default();
-        appInfo.s_type = vk::StructureType::APPLICATION_INFO;
-        let gameName =  GAME.gameName.lock().unwrap().clone();
-        let gm = std::ffi::CString::new(gameName.as_str()).unwrap();
-        appInfo.p_application_name = gm.as_ptr();
-        appInfo.application_version = vk::make_api_version(0, 0, 1, 0);
-        let engine_name = std::ffi::CString::new("Rusty Engine").unwrap();
-        appInfo.p_engine_name = engine_name.as_ptr();
-        appInfo.engine_version = vk::make_api_version(0, 0, 1, 0);
-        appInfo.api_version = vk::make_api_version(0, 1, 3, 241);
-        
-        let mut extension_names =
-        GAME.window.vulkan_instance_extensions()
-            .unwrap()
-            .to_vec();
-        extension_names.push(ash::extensions::ext::DebugUtils::name().to_str().unwrap());
-        // for ext in extension_names.to_vec() {
-        //     println!("{}", ext);
-        // }
-        let layer_names = [std::ffi::CStr::from_bytes_with_nul_unchecked(
-            b"VK_LAYER_KHRONOS_validation\0",
-        )];
-        let layers_names_raw: Vec<*const std::os::raw::c_char> = layer_names
-            .iter()
-            .map(|raw_name| raw_name.as_ptr())
-            .collect();
-        let ext1 = extension_names.into_iter().map(|s| s.as_ptr().cast::<i8>()).collect::<Vec<*const i8>>();
-        let create_flags = vk::InstanceCreateFlags::default();
-        let mut createInfo = vk::InstanceCreateInfo::builder()
-            .enabled_extension_names(ext1.as_slice());
-        createInfo.p_application_info = &appInfo;
-        
-        createInfo.pp_enabled_layer_names = layers_names_raw.as_ptr();
-        createInfo.flags = create_flags;
-        println!("Creating inst.");
-        
-        let instance = entry.create_instance(&createInfo, None).expect("Failed to create Instance!");
-        
-        println!("Created Inst.");
-
-        let exts = entry.enumerate_instance_extension_properties(None)
-            .expect("Failed to get Extention data.");
-        for ext in exts {
-            println!("{}", std::ffi::CStr::from_ptr(ext.extension_name.as_ptr()).to_str().unwrap());
-        }
-
-        // create devices
-
-        let physical_devices = instance.enumerate_physical_devices().expect("Failed to get physical devices");
-        
-        let driver = this.driver_vals.as_mut().unwrap();
-
-        driver.physical_devices = physical_devices;
-        driver.instance = Some(instance);
-        driver.entry = Some(entry);
-
-        
-
-        // Change to this if all else fails!!
-        // let handle = driver.instance.as_ref().unwrap().handle().as_raw();
-
-        // let surface_khr = GAME.window.vulkan_create_surface(handle as usize).expect("failed to create surface");
-
-        // driver.surface = Some(vk::SurfaceKHR::from_raw(surface_khr));
-
-        driver.surface = RenderPipelineSystem::get_surface(driver);
-        
-        let mut indices = RenderPipelineSystem::find_queue_families(driver, 0);
-
-        let mut queue_create_info = vk::DeviceQueueCreateInfo::builder()
-            .queue_family_index(indices.graphics_family.unwrap())
-            .build();
-        queue_create_info.s_type = vk::StructureType::DEVICE_QUEUE_CREATE_INFO;
-        queue_create_info.queue_count = 1;
-
-        let queue_priority = 1.0;
-        queue_create_info.p_queue_priorities = &queue_priority;
-
-        let device_features = vk::PhysicalDeviceFeatures::default();
-
-        let mut device_info = vk::DeviceCreateInfo::builder()
-            .queue_create_infos(&[queue_create_info])
-            .enabled_features(&device_features)
-            .build();
-
-        device_info.s_type = vk::StructureType::DEVICE_CREATE_INFO;
-        device_info.queue_create_info_count = 1;
-        device_info.enabled_extension_count = 0;
-
-        let mut logical_device = driver.instance.as_ref().unwrap().create_device(driver.physical_devices[0], &device_info, None).expect("failed to create logical device!");
-
-        driver.logical_devices.push(Some(logical_device));
-
-        let queue = driver.logical_devices[0].as_ref().unwrap().get_device_queue( indices.graphics_family.unwrap(), 0);
-
-
-        let mut vt_input = vk::VertexInputBindingDescription::default();
-        vt_input.input_rate = vk::VertexInputRate::VERTEX;
-        vt_input.stride = std::mem::size_of::<[f32; 3]>() as u32;
-        vt_input.binding = 0;
-        
-    }
-
-    #[cfg(feature = "vulkan")]
-    unsafe fn get_best_device(driver:&mut DriverValues) -> usize {
-        if(driver.physical_devices.len() == 0){
-            panic!("Couldn't find any gpus with Vulkan support!! Try OpenGL instead!!");
-        }
-        let mut device_candidates: Vec<(u32, usize)> = Vec::<(u32, usize)>::new();
-        let mut i = 0;
-        for p_physical_device in &driver.physical_devices {
-            let score = RenderPipelineSystem::rate_physical_device(p_physical_device, driver.instance.as_ref().unwrap());
-            device_candidates.push((score, i));
-            i += 1;
-        }
-        for candidate in device_candidates {
-            if candidate.0 > 0 {
-                if RenderPipelineSystem::checkDeviceSuitability(driver, candidate.1) {
-                    return candidate.1;
-                }
-            }
-        }
-
-        0
-    }
-
-    #[cfg(feature = "vulkan")]
-    unsafe fn checkDeviceSuitability(driver:&mut DriverValues, device: usize) -> bool{
-        let indices = RenderPipelineSystem::find_queue_families(driver, device);
-
-        return indices.is_complete();
-    }
-
-    #[cfg(feature = "vulkan")]
-    unsafe fn find_queue_families(driver:&mut DriverValues, device: usize) -> QueueFamiltyIdices{
-
-        let mut indices: QueueFamiltyIdices = QueueFamiltyIdices::default();
-        let mut queue_fams = driver.instance.as_ref().unwrap().get_physical_device_queue_family_properties(driver.physical_devices[device]);
-        let mut surface_loader = extensions::khr::Surface::new(driver.entry.as_ref().unwrap(), driver.instance.as_ref().unwrap());
-        
-
-        let mut i: u32 = 0;
-        for queue_family in queue_fams {
-            if queue_family.queue_flags.contains(vk::QueueFlags::GRAPHICS) {
-                indices.graphics_family = Some(i);
-                
-            }
-
-            let present_support = surface_loader.get_physical_device_surface_support(driver.physical_devices[device], i, driver.surface.unwrap()).expect("Failed to check surface support!!");
-            if present_support {
-                indices.present_family = Some(i);
-            }
-            
-
-            if indices.is_complete() {
-                break;
-            }
-            i +=1;
-        }
-
-        indices
-    }
-
-    #[cfg(feature = "vulkan")]
-    unsafe fn rate_physical_device(physical_device: &vk::PhysicalDevice, instance: &Instance) -> u32 {
-        let mut score: u32 = 0;
-        let physical_device_properties = instance.get_physical_device_properties(*physical_device);
-        let physical_device_features = instance.get_physical_device_features(*physical_device);
-        
-        if(physical_device_properties.device_type == vk::PhysicalDeviceType::DISCRETE_GPU) {
-            score += 1000000;
-        }
-
-        score += physical_device_properties.limits.max_image_dimension2_d;
-        println!("{name}: {score} : {hasGeom}", name=std::ffi::CStr::from_ptr(physical_device_properties.device_name.as_ptr()).to_str().unwrap(), hasGeom = physical_device_features.geometry_shader);
-        if physical_device_features.geometry_shader == 0 {
-            return 0;
-        }
-        
-        score
-    }
-
-    #[cfg(feature = "vulkan")]
-    pub unsafe fn get_surface(driver: &mut DriverValues) -> Option<vk::SurfaceKHR>{
-
-        
-
-        #[cfg(target_os = "windows")]
-        unsafe fn get_surface_a(driver: &mut DriverValues) -> Option<vk::SurfaceKHR> {
-            let mut window_info: sdl2::raw_window_handle::SDL_SysWMinfo = std::mem::zeroed();
-            let bb  = SDL_GetWindowWMInfo(GAME.window.raw(), &mut window_info);
-
-            let display_handle = raw_window_handle::WindowsDisplayHandle::empty();
-
-            let mut window_handle = raw_window_handle::Win32WindowHandle::empty();
-            window_handle.hinstance = window_info.info.win.hinstance.cast();
-            window_handle.hwnd = window_info.info.win.window.cast();
-
-            let surface = ash_window::create_surface(driver.entry.as_ref().unwrap(), 
-                driver.instance.as_ref().unwrap(), 
-                raw_window_handle::RawDisplayHandle::Windows(display_handle), 
-                raw_window_handle::RawWindowHandle::Win32(window_handle), None)
-                .expect("Failed to create surface!!");
-
-            Some(surface)
-        }
-        
-
-
-        #[cfg(target_os = "linux")]
-        unsafe fn get_surface_a(driver: &mut DriverValues) -> Option<vk::SurfaceKHR> {
-            // Assume wayland!!
-            let mut window_info: sdl2::raw_window_handle::SDL_SysWMinfo = std::mem::zeroed();
-            SDL_GetWindowWMInfo(GAME.window.raw(), &mut window_info);
-
-            let mut display_handle = raw_window_handle::WaylandDisplayHandle::empty();
-
-            display_handle.display = window_info.info.wl.display;
-
-            let mut window_handle = raw_window_handle::WaylandWindowHandle::empty();
-
-            window_handle.surface = window_info.info.wl.surface;
-
-            let surface = ash_window::create_surface(driver.entry.as_ref().unwrap(), 
-                driver.instance.as_ref().unwrap(), 
-                raw_window_handle::RawDisplayHandle::Wayland(display_handle), 
-                raw_window_handle::RawWindowHandle::Wayland(window_handle), None)
-                .expect("Failed to create surface!!");
-            Some(surface)
-        }
-
-        #[cfg(target_os = "macos")]
-        unsafe fn get_surface_a(driver: &mut DriverValues) -> Option<vk::SurfaceKHR> {
-
-            let mut window_info: sdl2::raw_window_handle::SDL_SysWMinfo = std::mem::zeroed();
-            SDL_GetWindowWMInfo(GAME.window.raw(), &mut window_info);
-
-            let mut display_handle = raw_window_handle::AppKitDisplayHandle::empty();
-
-            
-
-            let mut window_handle = raw_window_handle::AppKitWindowHandle::empty();
-
-            window_handle.ns_window = window_info.info.cocoa.window;
-
-            let surface = ash_window::create_surface(driver.entry.as_ref().unwrap(), 
-                driver.instance.as_ref().unwrap(), 
-                raw_window_handle::RawDisplayHandle::AppKit(display_handle), 
-                raw_window_handle::RawWindowHandle::AppKit(window_handle), None)
-                .expect("Failed to create surface!!");
-            Some(surface)
-
-        }
-
-        get_surface_a(driver)
-
-    }
 
     //endregion
 
@@ -534,27 +251,7 @@ impl RenderPipelineSystem{
     }
 
 }
-extern "C" {
-    fn SDL_GetWindowWMInfo(window: *mut sdl2::sys::SDL_Window, info: *mut sdl2::raw_window_handle::SDL_SysWMinfo) -> sdl2::sys::SDL_bool;
-}
 
-#[cfg(feature = "vulkan")]
-pub trait VulkanRender {
-    fn init(&self) -> i32;
-    fn render(th: Arc<Mutex<Self>>) -> i32;
-}
-
-#[cfg(feature = "vulkan")]
-#[derive(Default, Clone)]
-pub struct DriverValues {
-    pub entry: Option<Entry>,
-    pub instance: Option<Instance>,
-    pub physical_devices: Vec<vk::PhysicalDevice>,
-    pub logical_devices : Vec<Option<Device>>,
-    pub surface : Option<vk::SurfaceKHR>,
-    pub enable_validation_layers: bool,
-
-}
 
 #[cfg(feature = "opengl")]
 pub trait OGLRender {
@@ -576,25 +273,4 @@ pub trait GLESRender {
 #[derive(Default, Clone, Clone)]
 pub struct DriverValues {}
 
-#[cfg(feature = "vulkan")]
-impl VulkanRender for Pipeline {
-    fn init(&self) -> i32 {
-        0
-    }
-
-    fn render(th: Arc<Mutex<Self>>) -> i32 {
-        let this = th.lock().unwrap();
-        // Rendering per mesh
-        // First generate all shaders and vertex buffers
-        for m in &this.meshs {
-            let mut mesh = m.lock().unwrap();
-            // first the shader, we must compile and generate a pipeline
-            let shader_modules = mesh.material.bake(this.device.clone());
-            
-            // Get vertex, index, texcoord buffers
-            
-        }
-        0
-    }
-}
 
