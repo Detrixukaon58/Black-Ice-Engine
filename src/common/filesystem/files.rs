@@ -8,7 +8,8 @@ use crate::common::{APP_DIR, materials};
 use crate::common::engine::gamesys::*;
 
 
-const ASSET_PATH: &str =  "F:\\Rust\\Program 1\\assets";
+#[cfg(target_os = "windows")] const ASSET_PATH: &str =  "F:\\Rust\\Program 1\\assets";
+#[cfg(target_os = "linux")] const ASSET_PATH: &str = "/home/detrix/rust/black-ice/assets";
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct AssetPath {
@@ -113,7 +114,9 @@ impl FileSys{
     pub fn open(&mut self, _path: &str){
         // do more to getting it for only local systems e.g. get resources from pak files when in release and from local assets when in debug
         println!("{}", _path);
-        let full_path = format!("{}\\{}", ASSET_PATH, _path[7..].to_owned());
+        let mut full_path = format!("{}\\{}", ASSET_PATH, _path[7..].to_owned());
+        full_path = String::from(full_path).replace("\\", "/");
+        println!("{}", full_path);
         let dir = fs::metadata(full_path.clone()).unwrap();
         
         if dir.is_file() {

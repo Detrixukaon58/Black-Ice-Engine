@@ -8,7 +8,7 @@ authors = ["Detrixukoan58"]
 
 [lib]
 name="black_ice_lib"
-verion="0.1.0"
+version ="0.1.0"
 path="src/libs.rs"
 crate-type = ["cdylib"]
 

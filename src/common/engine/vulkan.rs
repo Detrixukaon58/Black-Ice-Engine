@@ -125,6 +125,7 @@ impl DriverValues {
         
         let mut extension_names = Self::get_window_extentions();
         extension_names.push(ash::extensions::ext::DebugUtils::name().to_str().unwrap());
+        // #[cfg(target_os = "linux")] extension_names.push(ash::extensions::khr::XlibSurface::name().to_str().unwrap());
         for ext in extension_names.to_vec() {
             println!("{}", ext.blue());
         }
@@ -172,8 +173,8 @@ impl DriverValues {
         DriverValues::choose_best_device(driver);
         // SwapChain creation fails for NVDIA Cards...
         DriverValues::create_swap_chain(driver);
-        DriverValues::create_image_views(driver);
-        
+        //DriverValues::create_image_views(driver);
+        println!("Created Swapcahin!!");
         
         // let mut vt_input = vk::VertexInputBindingDescription::default();
         // vt_input.input_rate = vk::VertexInputRate::VERTEX;
@@ -428,20 +429,44 @@ impl DriverValues {
 
         #[cfg(target_os = "linux")]
         unsafe fn get_window_extentions_a() -> Vec<*const i8> {
-            // Assume wayland!!
-            let mut window_info: sdl2::raw_window_handle::SDL_SysWMinfo = std::mem::zeroed();
-            SDL_GetWindowWMInfo(GAME.window.raw(), &mut window_info);
 
-            let mut display_handle = raw_window_handle::WaylandDisplayHandle::empty();
+            let process = std::process::Command::new("sh").arg("-c").arg("echo $XDG_SESSION_TYPE").output().unwrap();
+            let windowing = std::str::from_utf8_unchecked(process.stdout.as_slice());
+            println!("{}", windowing);
+            match windowing {
 
-            display_handle.display = window_info.info.wl.display;
+                "wayland\n" =>{
+                    let mut window_info: sdl2::raw_window_handle::SDL_SysWMinfo = std::mem::zeroed();
+                    SDL_GetWindowWMInfo(GAME.window.raw(), &mut window_info);
 
-            let mut window_handle = raw_window_handle::WaylandWindowHandle::empty();
+                    let mut display_handle = raw_window_handle::WaylandDisplayHandle::empty();
+                    
+                    display_handle.display = window_info.info.wl.display.cast();
 
-            window_handle.surface = window_info.info.wl.surface;
+                    let mut window_handle = raw_window_handle::WaylandWindowHandle::empty();
 
-            ash_window::enumerate_required_extensions(raw_window_handle::RawDisplayHandle::Wayland(display_handle))
-                .expect("Failed to get window extentions").to_vec();
+                    window_handle.surface = window_info.info.wl.surface.cast();
+
+                    ash_window::enumerate_required_extensions(raw_window_handle::RawDisplayHandle::Wayland(display_handle))
+                        .expect("Failed to get window extentions").to_vec()
+                }
+                "x11\n" => {
+                    let mut window_info: sdl2::raw_window_handle::SDL_SysWMinfo = std::mem::zeroed();
+                    SDL_GetWindowWMInfo(GAME.window.raw(), &mut window_info);
+    
+                    let mut display_handle = raw_window_handle::XlibDisplayHandle::empty();
+                    
+                    display_handle.display = window_info.info.x11.display.cast();
+    
+                    let mut window_handle = raw_window_handle::XlibWindowHandle::empty();
+    
+                    window_handle.window = window_info.info.x11.window;
+    
+                    ash_window::enumerate_required_extensions(raw_window_handle::RawDisplayHandle::Xlib(display_handle))
+                        .expect("Failed to get window extentions").to_vec()
+                }
+                _=> todo!()
+            }
         }
 
         #[cfg(target_os = "macos")]
@@ -456,10 +481,10 @@ impl DriverValues {
 
             let mut window_handle = raw_window_handle::AppKitWindowHandle::empty();
 
-            window_handle.ns_window = window_info.info.cocoa.window;
+            window_handle.ns_window = window_info.info.cocoa.window.cast();
 
             ash_window::enumerate_required_extensions(raw_window_handle::RawDisplayHandle::AppKit(display_handle))
-                .expect("Failed to get window extentions").to_vec();
+                .expect("Failed to get window extentions").to_vec()
 
         }
 
@@ -562,6 +587,8 @@ impl DriverValues {
             }
             else {
                 swap_chain_info.image_sharing_mode = vk::SharingMode::EXCLUSIVE;
+                // swap_chain_info.queue_family_index_count = 1;
+                // swap_chain_info.p_queue_family_indices = vec![queue_family_indices[0].clone()].as_ptr();
             }
 
             swap_chain_info.pre_transform = if !support_details.capabilities.current_transform.contains(vk::SurfaceTransformFlagsKHR::IDENTITY) 
@@ -859,11 +886,11 @@ impl DriverValues {
 
             let mut display_handle = raw_window_handle::WaylandDisplayHandle::empty();
 
-            display_handle.display = window_info.info.wl.display;
+            display_handle.display = window_info.info.wl.display.cast();
 
             let mut window_handle = raw_window_handle::WaylandWindowHandle::empty();
 
-            window_handle.surface = window_info.info.wl.surface;
+            window_handle.surface = window_info.info.wl.surface.cast();
 
             let surface = ash_window::create_surface(driver.entry.as_ref().unwrap(), 
                 driver.instance.as_ref().unwrap(), 
@@ -885,7 +912,7 @@ impl DriverValues {
 
             let mut window_handle = raw_window_handle::AppKitWindowHandle::empty();
 
-            window_handle.ns_window = window_info.info.cocoa.window;
+            window_handle.ns_window = window_info.info.cocoa.window.cast();
 
             let surface = ash_window::create_surface(driver.entry.as_ref().unwrap(), 
                 driver.instance.as_ref().unwrap(), 
