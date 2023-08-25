@@ -138,13 +138,15 @@ impl DriverValues {
             .collect();
         let ext1 = extension_names.into_iter().map(|s| s.as_ptr().cast::<i8>()).collect::<Vec<*const i8>>();
         let create_flags = vk::InstanceCreateFlags::default();
+
+
         let mut create_info = vk::InstanceCreateInfo::builder()
-            .enabled_extension_names(ext1.as_slice());
-        create_info.p_application_info = &app_info;
+            .enabled_extension_names(ext1.as_slice())
+            .enabled_layer_names(&layers_names_raw)
+            .application_info(&app_info)
+            .flags(create_flags)
+            .build();
         
-        create_info.pp_enabled_layer_names = layers_names_raw.as_ptr();
-        create_info.flags = create_flags;
-        // println!("Creating inst.");
         
         let instance = entry.create_instance(&create_info, None).expect("Failed to create Instance!");
         
@@ -603,6 +605,7 @@ impl DriverValues {
             let instance = driver.instance.as_ref().unwrap();
             let swap_chain = Swapchain::new(driver.instance.as_ref().unwrap(), logical_device.1.as_ref().unwrap());
             
+            
             let test = swap_chain.create_swapchain(&swap_chain_info, None);
             driver.swap_chain = Some( 
                 // match test {
@@ -691,36 +694,38 @@ impl DriverValues {
             let physical_device_features = driver.instance.as_ref().unwrap().get_physical_device_features(physical_device.1);
             let queue_indices = DriverValues::find_queue_families(driver, physical_device.1);
 
-            let queue_graphics_info = vk::DeviceQueueCreateInfo::builder()
+            let mut queue_graphics_info = vk::DeviceQueueCreateInfo::builder()
             .queue_family_index(queue_indices.graphics_family.unwrap())
             .build();
+            queue_graphics_info.queue_count = 1;
 
-            let queue_present_info = vk::DeviceQueueCreateInfo::builder()
-            .queue_family_index(queue_indices.present_family.unwrap())
-            .build();
-            let ext = vec![
-                ash::extensions::khr::Swapchain::name().as_ptr(),
-                
-            ];
-            let extension_names = ext.as_slice();
+            let extension_names = driver.device_ext.iter().map(|v| v.as_ptr()).collect::<Vec<*const i8>>();
 
             // for ext in extension_names {
             //     println!("{:?}", std::ffi::CStr::from_ptr(*ext));
             // }
 
-            let mut create_infos = vec![queue_graphics_info, queue_present_info];
+            let mut create_infos = vec![queue_graphics_info];
 
-            if queue_indices.transfer_family.is_some() {
-                let info = vk::DeviceQueueCreateInfo::builder()
-                    .queue_family_index(queue_indices.transfer_family.unwrap())
-                    .build();
-                create_infos.push(info);
+            // if queue_indices.transfer_family.is_some() && queue_indices.transfer_family.unwrap() != queue_indices.graphics_family.unwrap() {
+            //     let info = vk::DeviceQueueCreateInfo::builder()
+            //         .queue_family_index(queue_indices.transfer_family.unwrap())
+            //         .build();
+            //     create_infos.push(info);
+            // }
+
+            if queue_indices.present_family.unwrap() != queue_indices.graphics_family.unwrap() {
+                let mut queue_present_info = vk::DeviceQueueCreateInfo::builder()
+                .queue_family_index(queue_indices.present_family.unwrap())
+                .build();
+                create_infos.push(queue_present_info);
+                queue_present_info.queue_count = 1;
             }
 
             let logical_device_info = vk::DeviceCreateInfo::builder()
             .enabled_features(&physical_device_features)
             .queue_create_infos(create_infos.as_slice())
-            .enabled_extension_names(extension_names)
+            .enabled_extension_names(extension_names.as_slice())
             .build();
 
             

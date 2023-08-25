@@ -32,7 +32,7 @@
     },
     "rust-analyzer.debug.engineSettings": {},
     "rust-analyzer.cargo.features": ["vulkan"],
-    "rust-analyzer.cargo.extraArgs": ["--all-features"],
+    "rust-analyzer.cargo.extraArgs": [],
     "lldb.verboseLogging": true,
     "lldb.launch.terminal": "integrated"
 }

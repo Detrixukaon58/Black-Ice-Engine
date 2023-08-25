@@ -253,24 +253,24 @@ impl RenderPipelineSystem{
 }
 
 
-#[cfg(feature = "opengl")]
-pub trait OGLRender {
-    fn init(&self) -> i32;
-    fn render(th: Arc<Mutex<Self>>) -> i32;
-}
+// #[cfg(feature = "opengl")]
+// pub trait OGLRender {
+//     fn init(&self) -> i32;
+//     fn render(th: Arc<Mutex<Self>>) -> i32;
+// }
 
-#[cfg(feature = "opengl")]
-#[derive(Default, Clone)]
-pub struct DriverValues {}
+// #[cfg(feature = "opengl")]
+// #[derive(Default, Clone)]
+// pub struct DriverValues {}
 
-#[cfg(feature = "gles")]
-pub trait GLESRender {
-    fn init(&self) -> i32;
-    fn render(th: Arc<Mutex<Self>>) -> i32;
-}
+// #[cfg(feature = "gles")]
+// pub trait GLESRender {
+//     fn init(&self) -> i32;
+//     fn render(th: Arc<Mutex<Self>>) -> i32;
+// }
 
-#[cfg(feature = "gles")]
-#[derive(Default, Clone, Clone)]
-pub struct DriverValues {}
+// #[cfg(feature = "gles")]
+// #[derive(Default, Clone, Clone)]
+// pub struct DriverValues {}
 
 
