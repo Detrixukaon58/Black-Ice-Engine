@@ -173,9 +173,8 @@ impl DriverValues {
         DriverValues::register_physical_devices(driver, physical_devices);
         DriverValues::create_logical_devices(driver);
         DriverValues::choose_best_device(driver);
-        // SwapChain creation fails for NVDIA Cards...
         DriverValues::create_swap_chain(driver);
-        //DriverValues::create_image_views(driver);
+        DriverValues::create_image_views(driver);
         println!("Created Swapcahin!!");
         
         // let mut vt_input = vk::VertexInputBindingDescription::default();
@@ -523,6 +522,7 @@ impl DriverValues {
                     .layer_count(1)
                     .build()
                 )
+                .format(vk::Format::B8G8R8A8_SRGB)
                 .build();
             let device = driver.logical_devices.iter().find(|v| v.0 == driver.chosen_device).unwrap().1.as_ref().unwrap();
             let image_view = device.create_image_view(&create_info, None).expect("Failed to create image_view");
@@ -694,8 +694,11 @@ impl DriverValues {
             let physical_device_features = driver.instance.as_ref().unwrap().get_physical_device_features(physical_device.1);
             let queue_indices = DriverValues::find_queue_families(driver, physical_device.1);
 
+            let queue_priorities = vec![1.0];
+
             let mut queue_graphics_info = vk::DeviceQueueCreateInfo::builder()
             .queue_family_index(queue_indices.graphics_family.unwrap())
+            .queue_priorities(queue_priorities.as_slice())
             .build();
             queue_graphics_info.queue_count = 1;
 
@@ -717,6 +720,7 @@ impl DriverValues {
             if queue_indices.present_family.unwrap() != queue_indices.graphics_family.unwrap() {
                 let mut queue_present_info = vk::DeviceQueueCreateInfo::builder()
                 .queue_family_index(queue_indices.present_family.unwrap())
+                .queue_priorities(queue_priorities.as_slice())
                 .build();
                 create_infos.push(queue_present_info);
                 queue_present_info.queue_count = 1;
