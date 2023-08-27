@@ -1,5 +1,5 @@
 use crate::common::{ vertex::*, New, angles::*};
-use std::*;
+use std::{*, fmt::Display};
 
 
 
@@ -17,6 +17,12 @@ pub struct Vec4 {
     pub y: f32,
     pub z: f32,
     pub w: f32
+}
+
+impl Display for Vec4 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Vec4({x}, {y}, {z}, {w})", x=self.x, y=self.y, z=self.z, w=self.w)
+    }
 }
 
 /// This is our translations, rotations and scalings
@@ -245,4 +251,34 @@ impl M34Buffer for Matrix34 {
         self.y.x, self.y.y, self.y.z, self.y.w,
         self.z.x, self.z.y, self.z.z, self.z.w];
     }
+}
+
+pub struct MatrixProjection {
+    pub x: Vec4,
+    pub y: Vec4,
+    pub z: Vec4,
+    pub w: Vec4,
+}
+
+impl MatrixProjection {
+    pub fn to_buffer(&self) -> [f32; 16]{
+        [self.x.x, self.x.y, self.x.z, self.x.w,
+        self.y.x, self.y.y, self.y.z, self.y.w,
+        self.z.x, self.z.y, self.z.z, self.z.w,
+        self.w.x, self.w.y, self.w.z, self.w.w]
+    }
+
+    pub fn ortho_projection(&self) {
+
+    }
+
+    pub fn perpective_projection(&self) {
+
+    }
+
+    pub fn new() -> Self {
+        Self { x: Vec4::zero(), y: Vec4::zero(), z: Vec4::zero(), w: Vec4::zero() }
+    }
+
+    
 }

@@ -43,7 +43,7 @@ impl VulkanRender for Pipeline {
         for m in &this.meshs {
             let mut mesh = m.lock().unwrap();
             // first the shader, we must compile and generate a pipeline
-            mesh.material.bake(DriverValues::get_current_logical_device(driver));
+            //mesh.material.bake(DriverValues::get_current_logical_device(driver));
             
             // Get vertex, index, texcoord buffers
             

@@ -146,10 +146,10 @@ impl Entity {
                 mutex.clear();
             }
             drop(recv);
-
-
+            drop(this);
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
+        println!("{}", "Killed Entity".red());
         std::thread::sleep(std::time::Duration::from_millis(100));
         0
     }
@@ -166,7 +166,13 @@ impl Entity {
                     Ok(re) => re,
                     Err(err) => continue 'test2
                 };
-                recv.push(event.clone());
+                match event {
+                    EventThreadData::KillEvent() => {
+                        recv.clear();
+                        recv.push(event.clone());
+                    },
+                    _ => recv.push(event.clone())
+                };
                 break 'test;
             }
         }

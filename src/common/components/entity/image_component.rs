@@ -60,8 +60,8 @@ impl BaseComponent for Image {
 
 impl Constructor<Image> for Image {
     unsafe fn construct(entity: ComponentRef<Entity>, definition: &ConstructorDefinition) -> Option<ComponentRef<Image>> {
-        let map = definition.get("image_file").expect("Failed to Build Image").as_object().unwrap();
-        let path = String::from(map.get("path").unwrap().as_str().unwrap());
+        let map = definition.get("image_file").expect("Failed to Build Image").as_component().unwrap();
+        let path = String::from(map.1.get("path").unwrap().as_str().unwrap());
         println!("{}", path);
         Some(ComponentRef_new(Self {
             image_file: AssetPath::new(path.clone()),

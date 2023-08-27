@@ -6,9 +6,9 @@ use super::engine::gamesys::Base;
 #[allow(dead_code)]
 #[derive(Copy, Clone)]
 pub struct Ang3 {
-    y : f32,
-    p : f32,
-    r : f32
+    pub y : f32,
+    pub p : f32,
+    pub r : f32
 }
 
 #[derive(Copy, Clone, Serialize, Deserialize)]

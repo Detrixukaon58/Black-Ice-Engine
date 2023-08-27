@@ -110,9 +110,9 @@ impl RenderPipelineSystem{
         return pip_sys;
     }
 
-    pub fn processing<'a>(this: &'a mut Self) -> i32{
+    pub fn processing<'a>(p_this: Arc<Mutex<Self>>) -> i32{
         unsafe{
-            
+            let this = p_this.lock().unwrap();
             // Initialise pipeline stuff
             #[cfg(feature = "vulkan")]DriverValues::init_vulkan(this.driver_vals.lock().unwrap().as_mut().unwrap());
             #[cfg(feature = "opengl")]RenderPipelineSystem::init_ogl(this);
@@ -126,9 +126,11 @@ impl RenderPipelineSystem{
             //let mut threads: Box<Dict<usize, Arc<Mutex<Threader>>>> = Box::new(Dict::<usize, Arc<Mutex<Threader>>>::new());
 
             
-            
+            drop(this);
             while !Game::isExit() {
-                let mut recv = this.thread_reciever.try_lock();
+                let this = p_this.lock().unwrap();
+                let p_recv = this.thread_reciever.clone();
+                let mut recv = p_recv.try_lock();
                 if let Ok(ref mut mutex) = recv {
                     for th in mutex.as_slice() {
                         let data = th.clone();
@@ -164,7 +166,7 @@ impl RenderPipelineSystem{
                         #[cfg(feature = "vulkan")]VulkanRender::render(p.clone());
                     // });
                 }
-
+                drop(this);
                 std::thread::sleep(std::time::Duration::from_millis(5));
             }
             println!("Closing thread!!");
@@ -189,7 +191,7 @@ impl RenderPipelineSystem{
     pub fn init<'a>(this: Arc<Mutex<Self>>){
         // Start thread
         println!("Spawned Render Pipeline System");
-        Self::processing(&mut this.lock().unwrap());
+        Self::processing(this.clone());
     }
 
     //region Vulkan Render 

@@ -1,13 +1,16 @@
 use std::borrow::BorrowMut;
 use std::any::Any;
+use std::sync::*;
 use crate::common::{vertex::*, transform::*, engine::gamesys::*};
 use crate::common::filesystem::files::*;
 use crate::common::{materials::*, *};
 
+use super::components::component_system::ConstructorDefinition;
+
 // TODO: Add layer reference so that correct pipelines can get the correct meshes
 /// Type of resource
 
-pub struct Mesh {
+pub struct MeshObject {
     pub name: String,
     pub verts: Vec<Vec3>,
     pub faces: Vec<(i16, i16, i16)>, //made of 3 verts
@@ -17,8 +20,12 @@ pub struct Mesh {
     pub is_concave: bool
 }
 
+pub struct Mesh {
+    pub meshes: Vec<Arc<Mutex<MeshObject>>>,
+}
+
 pub struct MeshFile {
-    objects: Vec<Mesh>,
+    objects: Vec<Arc<Mutex<MeshObject>>>,
     pub mesh_file: FileSys,
     pub mesh_file_type: MFType,
     pub use_custom_materials: bool
@@ -60,10 +67,10 @@ pub trait MeshConstruct {
 }
 
 //region Mesh Reflection
-impl Base for Mesh{}
+impl Base for MeshObject{}
 impl Base for MeshFile{}
 
-impl Reflection for Mesh{
+impl Reflection for MeshObject{
     fn register_reflect(&'static self) -> Ptr<Register> 
     {
         let mut register = Box::new(Register::new(Box::new(self)));
@@ -111,7 +118,7 @@ impl Reflection for MeshFile {
 
 impl MeshInstanciate<MeshFile> for MeshFile {
     fn new() -> MeshFile {
-        return MeshFile {objects: Vec::<Mesh>::new(), mesh_file: FileSys::new(), mesh_file_type: MFType::UNKNOWN, use_custom_materials: false};
+        return MeshFile {objects: Vec::<Arc<Mutex<MeshObject>>>::new(), mesh_file: FileSys::new(), mesh_file_type: MFType::UNKNOWN, use_custom_materials: false};
     }
 }
 
@@ -148,10 +155,12 @@ impl MeshFileSys for MeshFile {
 
             let line = get_line(&buffer, i);
             let (line_type, split) = check_line(line);
+            let p_current = self.objects[current_object].clone();
+            let mut obj = p_current.lock().unwrap();
             match line_type{
                 Lntp::VERTEX =>         {
                     let vertex = Vec3::new(split[1].parse::<f32>().unwrap(), split[2].parse::<f32>().unwrap(), split[3].parse::<f32>().unwrap());
-                    self.objects[current_object].define_point(vertex);
+                    obj.define_point(vertex);
                 },
                 Lntp::VERTEX_TEXTURE => {texture_coords.push((split[1].parse::<f32>().unwrap(), split[2].parse::<f32>().unwrap()));},
                 Lntp::VERTEX_NORMAL => {normals.push(Vec3::new(split[1].parse::<f32>().unwrap(), split[2].parse::<f32>().unwrap(), split[3].parse::<f32>().unwrap()))},
@@ -165,17 +174,26 @@ impl MeshFileSys for MeshFile {
                         let mut a = face_vertices[0].split('/');
                         let mut b = face_vertices[1].split('/');
                         let mut c = face_vertices[2].split('/');
-                        self.objects[current_object].define_face(a.nth(0).unwrap().parse::<i16>().unwrap(), b.nth(0).unwrap().parse::<i16>().unwrap(), c.nth(0).unwrap().parse::<i16>().unwrap());
+                        obj.define_face(a.nth(0).unwrap().parse::<i16>().unwrap(), b.nth(0).unwrap().parse::<i16>().unwrap(), c.nth(0).unwrap().parse::<i16>().unwrap());
                     }
                 },
                 Lntp::MTLLIB => {},
                 Lntp::OBJECT_NAME => {
                     for i in 0..(normals.len()) {
-                        self.objects[current_object].define_normal(i.try_into().unwrap(), normals[i]);
-                        self.objects[current_object].define_uv(i.try_into().unwrap(), texture_coords[i]);
+                        obj.define_normal(i.try_into().unwrap(), normals[i]);
+                        obj.define_uv(i.try_into().unwrap(), texture_coords[i]);
                     }
 
-                    self.objects.push(Mesh { name: String::from(split[1]), verts: Vec::new(), faces: Vec::new(), normals: Vec::new(), texture_coord: Vec::new(), material: Box::new(Material::new()), is_concave: false });
+                    self.objects.push(components::component_system::ComponentRef_new(
+                        MeshObject { 
+                            name: String::from(split[1]), 
+                            verts: Vec::new(), 
+                            faces: Vec::new(), 
+                            normals: Vec::new(), 
+                            texture_coord: Vec::new(), 
+                            material: Box::new(Material::new()), 
+                            is_concave: false 
+                        }));
                     current_object += 1;
 
                 },
@@ -251,7 +269,20 @@ impl MeshFileSys for MeshFile {
 
 }
 
-impl MeshConstruct for Mesh {
+impl MeshFile {
+    pub fn construct(definition: ConstructorDefinition) -> Self {
+        let mesh_file_path = definition.get("mesh_file_path").unwrap().as_str().expect("Failed to get Mesh File Path");
+        let mut mesh_file = Self::new();
+        mesh_file.open(mesh_file_path.as_str());
+        mesh_file
+    }
+
+    pub fn as_mesh(&self) -> Mesh {
+        Mesh { meshes: self.objects.clone() }
+    }
+}
+
+impl MeshConstruct for MeshObject {
 
     /// This gives a list of points that are in a mesh
     fn give_points(&mut self, verts: Vec<Vec3>) {
@@ -290,5 +321,11 @@ impl MeshConstruct for Mesh {
                 return;
             }
         }
+    }
+}
+
+impl MeshObject {
+    pub fn new(name: String) -> Self {
+        Self { name: name.clone(), verts: Vec::new(), faces: Vec::new(), normals: Vec::new(), texture_coord: Vec::new(), material: Box::new(Material::new()), is_concave: false }
     }
 }

@@ -4,6 +4,7 @@ use std::{any::TypeId, future};
 use std::collections::HashMap;
 use std::any::Any;
 use std::string;
+use crate::common;
 use crate::common::angles::QuatConstructor;
 use crate::common::vertex::V3New;
 use crate::common::{*, mesh::Mesh, components::{component_system::ComponentSystem, entity::entity_system::*}};
@@ -235,8 +236,8 @@ impl Game {
             self.event_pump = Some(self.sdl.event_pump().expect("Failed to load event pump!"));
             let p_render_sys = self.RENDER_SYS.clone();
             let p_entity_sys = self.ENTITY_SYS.clone();
-            let render_join_handle = std::thread::spawn(|| {RenderPipelineSystem::init(p_render_sys)});
-            let entity_join_handle = std::thread::spawn(|| {EntitySystem::init(p_entity_sys)});
+            let render_join_handle = std::thread::Builder::new().name(String::from("render")).spawn(|| {RenderPipelineSystem::init(p_render_sys)}).expect("Failed to create render thread!!");
+            let entity_join_handle = std::thread::Builder::new().name(String::from("entity")).spawn(|| {EntitySystem::init(p_entity_sys)}).expect("Failed to start entity thread!!");
             let p_ent_sys_2 = self.ENTITY_SYS.clone();
             let mut ent_sys_2 = p_ent_sys_2.lock().unwrap();
             let mut entity_params = components::entity::entity_system::EntityParams {
@@ -247,15 +248,15 @@ impl Game {
             };
             let p_entity = ent_sys_2.add_entity(entity_params);
             drop(ent_sys_2);
-            let def: serde_json::Value = serde_json::from_str(r#"
+            let def: common::components::component_system::Value = common::components::component_system::ValueBuilder::new().from_str(r#"
             {
                 "image_file": {
                     "path" : "ASSET:\\images\\nemissa_hitomi.png"
                 }
             }
-            "#).unwrap();
+            "#).build();
             println!("{}", def["image_file"]);
-            Entity::add_component::<components::entity::image_component::Image>(p_entity, def);
+            Entity::add_component::<components::entity::image_component::Image>(p_entity, Arc::new(def));
             // here we loop for the events
             'running: loop {
                 for event in self.event_pump.as_mut().unwrap().poll_iter() {

@@ -113,10 +113,10 @@ impl FileSys{
 
     pub fn open(&mut self, _path: &str){
         // do more to getting it for only local systems e.g. get resources from pak files when in release and from local assets when in debug
-        println!("{}", _path);
+        //println!("{}", _path);
         let mut full_path = format!("{}\\{}", ASSET_PATH, _path[7..].to_owned());
         full_path = String::from(full_path).replace("\\", "/");
-        println!("{}", full_path);
+        //println!("{}", full_path);
         let dir = fs::metadata(full_path.clone()).unwrap();
         
         if dir.is_file() {
