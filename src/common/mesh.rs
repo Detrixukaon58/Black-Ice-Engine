@@ -1,6 +1,7 @@
 use std::borrow::BorrowMut;
 use std::any::Any;
-use std::sync::*;
+use std::sync::Arc;
+use parking_lot::*;
 use crate::common::{vertex::*, transform::*, engine::gamesys::*};
 use crate::common::filesystem::files::*;
 use crate::common::{materials::*, *};
@@ -22,6 +23,58 @@ pub struct MeshObject {
 
 pub struct Mesh {
     pub meshes: Vec<Arc<Mutex<MeshObject>>>,
+    pub transform: matrices::Matrix34,
+}
+
+impl Mesh {
+
+    pub fn triangles(&mut self) {
+        let mut mesh_object = MeshObject::new("triangle".to_string());
+        
+        mesh_object.define_point(Vec3::new(-25.0, -25.0, 0.0));
+        mesh_object.define_point(Vec3::new(25.0, 25.0, 0.0));
+        mesh_object.define_point(Vec3::new(50.0, 0.0, 0.0));
+
+        mesh_object.define_face(0, 1, 2);
+        mesh_object.define_normal(0, Vec3::new(0.0, 0.0, 1.0));
+        mesh_object.define_normal(1, Vec3::new(0.0, 0.0, 1.0));
+        mesh_object.define_normal(2, Vec3::new(0.0, 0.0, 1.0));
+
+        mesh_object.define_uv(0, (0.0, 0.0));
+        mesh_object.define_uv(0, (0.5, 0.5));
+        mesh_object.define_uv(2, (1.0, 0.0));
+
+        self.meshes.push(Arc::new(Mutex::new(mesh_object)));
+    }
+
+    pub fn square(&mut self) {
+        let mut mesh_object = MeshObject::new("square".to_string());
+        
+        mesh_object.define_point(Vec3::new(-25.0, -25.0, 0.0));
+        mesh_object.define_point(Vec3::new(25.0, -25.0, 0.0));
+        mesh_object.define_point(Vec3::new(25.0, 25.0, 0.0));
+
+        mesh_object.define_face(0, 1, 2);
+        mesh_object.define_normal(0, Vec3::new(0.0, 0.0, 1.0));
+        mesh_object.define_normal(1, Vec3::new(0.0, 0.0, 1.0));
+        mesh_object.define_normal(2, Vec3::new(0.0, 0.0, 1.0));
+
+        mesh_object.define_point(Vec3::new(-25.0, 25.0, 0.0));
+
+        mesh_object.define_face(2, 3, 0);
+        mesh_object.define_normal(3, Vec3::new(0.0, 0.0, 1.0));
+
+        mesh_object.define_uv(0, (0.0, 0.0));
+        mesh_object.define_uv(1, (0.5, 0.5));
+        mesh_object.define_uv(2, (1.0, 0.0));
+        mesh_object.define_uv(3, (1.0, 0.0));
+
+        self.meshes.push(Arc::new(Mutex::new(mesh_object)));
+    }
+
+    pub fn new() -> Self {
+        Self { meshes: Vec::new(), transform: matrices::Matrix34::identity()}
+    }
 }
 
 pub struct MeshFile {
@@ -156,7 +209,7 @@ impl MeshFileSys for MeshFile {
             let line = get_line(&buffer, i);
             let (line_type, split) = check_line(line);
             let p_current = self.objects[current_object].clone();
-            let mut obj = p_current.lock().unwrap();
+            let mut obj = p_current.lock();
             match line_type{
                 Lntp::VERTEX =>         {
                     let vertex = Vec3::new(split[1].parse::<f32>().unwrap(), split[2].parse::<f32>().unwrap(), split[3].parse::<f32>().unwrap());
@@ -278,7 +331,7 @@ impl MeshFile {
     }
 
     pub fn as_mesh(&self) -> Mesh {
-        Mesh { meshes: self.objects.clone() }
+        Mesh { meshes: self.objects.clone(), transform: matrices::Matrix34::identity()}
     }
 }
 

@@ -9,17 +9,17 @@
             "request": "launch",
             "name": "Debug",
             "program": "${workspaceFolder}/target/debug/black_ice_executable.exe",
-            // "cargo": {
-            //     "args": [
-            //         "build",
-            //         "--bin=black_ice_executable",
-            //         "--lib",
-            //         "--features=vulkan",
-            //     ],
-            //     "filter": {
-            //         "kind": "bin"
-            //     }
-            // },
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=black_ice_executable",
+                    "--lib",
+                    "--features=vulkan",
+                ],
+                "filter": {
+                    "kind": "bin"
+                }
+            },
             "args": [],
             "initCommands": ["target create \"F:\\Rust\\Program 1\\target\\debug\\black_ice_executable.exe\"", 
                 "target modules add \"F:\\Rust\\Program 1\\target\\debug\\vulkan-1.dll\"  --symfile \"F:\\Rust\\Program 1\\target\\debug\\vulkan-1.pdb\"", 

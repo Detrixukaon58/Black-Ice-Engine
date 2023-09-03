@@ -33,7 +33,7 @@ fn generate_verts() -> Vec<Vec3>{
 
     return verts;
 }
-#[cfg(feature = "opengl")]
+#[cfg(feature = "fake")]
 fn generate_vertices(verts: &Vec<Vec3>, indices: &Vec<i32>){
     unsafe {
         let mut a = verts.iter().map(|x| x.to_buffer()).collect::<Vec<_>>();
@@ -89,7 +89,7 @@ fn include_shaders() -> glsl_include::Context<'static> {
     }
     return context;
 }
-#[cfg(feature = "opengl")]
+#[cfg(feature = "fake")]
 fn generate_shader(frag: &str, vert: &str) -> GLuint {
     unsafe{
         let context = include_shaders();
@@ -221,7 +221,7 @@ fn add_shader_params(program: GLuint, description: Box<&dyn ShaderDescriptor>){
     }
 }
 
-#[cfg(feature = "opengl")]
+#[cfg(feature = "fake")]
 fn oldMain() {
     let mut vec: Vec3 = Vec3::new(1,1,1);
     let mut vec2: Vec3 = Vec3::new(0,0,1);

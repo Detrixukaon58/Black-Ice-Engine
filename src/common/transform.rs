@@ -1,24 +1,115 @@
 use crate::common::{vertex::*, angles::*, matrices::*};
 
+use super::{components::entity::entity_system::*, engine::gamesys::Game};
+use std::sync::*;
+
 #[derive(Clone)]
 pub struct Transform {
-
-    pub transform_id: i128,
-    pub local_position: Vec3,
-    pub local_rotation: Quat,
-    pub local_euler_rotation: Ang3,
-    pub local_scale: Vec3,
 
     pub position: Vec3,
     pub rotation: Quat,
     pub scale: Vec3,
 
-    pub world_matrix: Matrix34,
+    world_matrix: Matrix34,
 
-    pub parent: i128,
+    parent_transform: Option<Arc<Transform>>,
+    pp_entity: Option<EntityID>,
 
-    pub children: Vec<i128>
+}
+
+impl Default for Transform {
+    fn default() -> Self {
+        Self{
+            position: Vec3::new(0.0, 0.0, 0.0),
+            rotation: Quat::euler(0.0, 0.0, 0.0),
+            scale: Vec3::new(1.0, 1.0, 1.0),
+            world_matrix: Matrix34::identity(),
+            parent_transform: None,
+            pp_entity: None,
+        }
+    }
+}
+
+impl Transform {
+    pub fn new(position: Vec3, rotation: Quat, scale: Vec3) -> Self {
+        let mut mat = Matrix34::identity();
+        mat.translate(position);
+        mat.rotate(rotation);
+        // mat.scale(scale);
+        Self { position: position, rotation: rotation, scale: scale, world_matrix: mat , parent_transform: None, pp_entity: None}
+    }
+
+    fn update(&mut self) {
+        
+        self.world_matrix = Matrix34::identity();
+        self.world_matrix.translate(self.position);
+        self.world_matrix.rotate(self.rotation);
+        self.world_matrix.scale(self.scale);
+    }
+
+    pub fn rotate(&mut self, rotation: Quat) {
+        self.rotation *= rotation;
+        self.update();
+    }
+
+    pub fn translate(&mut self, translation: Vec3) {
+        self.position += translation;
+        self.update();
+    }
+
+    pub fn set_rotation(&mut self, rotation: Quat) {
+        self.rotation = rotation;
+        self.update();
+    }
+
+    pub fn set_position(&mut self, position: Vec3) {
+        self.position = position;
+        self.update();
+    }
     
-    
+    pub fn set_scale(&mut self, scale: Vec3) {
+        self.scale = scale;
+        self.update();
+    }
 
+    pub fn get_entity(&self) -> Option<EntityPtr> {
+        if let Some(p_entity) = self.pp_entity.as_ref(){
+            unsafe {
+                let p_entsy = Game::get_entity_sys();
+                let mut ent_sys = p_entsy.lock();
+                return ent_sys.get_entity(*p_entity);
+            }
+        }
+        None
+    }
+
+    pub fn get_forward(&self) -> Vec3 {
+        let v = self.world_matrix * Vec4::new(1.0, 0.0, 0.0, 1.0);
+        Vec3::new(v.x, v.y, v.z)
+    }
+
+    pub fn get_world_tm(&self) -> Matrix34 {
+        self.world_matrix.clone()
+    }
+
+    pub fn get_global_position(&self) -> Vec3 {
+        if let Some(t) = self.parent_transform.as_ref() {
+            let v = t.get_world_tm() * Vec4::new_from_vec3(self.position, 1.0);
+            Vec3::new(v.x, v.y, v.z)
+        }
+        else
+        {
+            self.position.clone()
+        }
+    }
+}
+
+pub trait TransformSetEntity {
+    fn set_entity(&mut self, p_entity: EntityID);
+}
+
+impl TransformSetEntity for Transform {
+    fn set_entity(&mut self, p_entity: EntityID) {
+        self.pp_entity = Some(p_entity);
+    }
 }

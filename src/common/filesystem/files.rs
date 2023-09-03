@@ -3,6 +3,7 @@ use std::fmt::{Display, Error};
 use std::fs::{*, self};
 use std::io::{prelude::*, BufReader};
 use serde::*;
+use shaderc::CompileOptions;
 
 use crate::common::{APP_DIR, materials};
 use crate::common::engine::gamesys::*;
@@ -220,12 +221,19 @@ pub trait AsShaderFile {
 
 impl AsShaderFile for FileSys {
     fn as_shader_file(&mut self, kind: shaderc::ShaderKind) -> ShaderFile {
-        let reader = self.b.as_ref().unwrap();
-        let file_buff = std::str::from_utf8(reader.buffer()).unwrap();
+        let reader = self.b.as_mut().unwrap();
+        let mut file_buff:String = String::new();
+        reader.read_to_string(&mut file_buff).expect("Failed to read shader file!!");
         let include_context = Self::include_shaders();
-        let glsl_buff = include_context.expand(file_buff).expect("Failed to load Shader File!!");
+        let glsl_buff = include_context.expand(file_buff.clone()).expect("Failed to load Shader File!!");
         let compiler = shaderc::Compiler::new().unwrap();
-        let compiled_code = compiler.compile_into_spirv(&glsl_buff.as_str(), kind, self.path.as_str(), "main", None).expect("Failed to compile Shader");
+        let mut compile_options = CompileOptions::new().unwrap();
+        compile_options.set_auto_bind_uniforms(true);
+        compile_options.set_auto_map_locations(true); 
+        #[cfg(feature = "opengl")]compile_options.set_target_env(shaderc::TargetEnv::OpenGL, shaderc::EnvVersion::OpenGL4_5 as u32);
+        #[cfg(feature = "vulkan")]compile_options.set_taget_env(shaderc::TargetEnv::Vulkan, shaderc::EnvVersion::Vulkan1_2);  
+        let compiled_code = compiler.compile_into_spirv(&glsl_buff.as_str(), kind, self.path.as_str(), "main", Some(&compile_options)).expect("Failed to compile Shader");
+        
 
         ShaderFile { code: compiled_code.as_binary().to_vec(), file: file_buff.as_bytes().to_vec() , shader_kind: kind, shader_path: self.path.clone()}
     }
@@ -236,14 +244,24 @@ impl AsShaderFile for FileSys {
         let mut context: glsl_include::Context = glsl_include::Context::new();
         let mut path_stack = Vec::<ReadDir>::new();
         let mut current_path = directory.next();
-        loop {
+        'run: loop {
+            if current_path.is_none() {
+                if path_stack.is_empty() {
+                    break 'run;
+                }
+                directory = path_stack.pop().unwrap();
+                current_path = directory.next();
+                continue;
+            }
             let path_unwraped = current_path.unwrap().unwrap();
             let path_path = path_unwraped.path();
             if path_path.is_file() && materials::compare(path_unwraped.file_name().to_str().unwrap()) {
-                let path_file = path_unwraped.file_name();
-                let path_file_str = path_file.as_os_str().to_str().unwrap();
+                let path_file_name = path_unwraped.file_name();
+                let path_file_str = path_file_name.as_os_str().to_str().unwrap();
                 
-                let path_data = path_path.display();
+                let mut path_file = File::open(path_path.display().to_string()).expect("Error opening shader!!");
+                let mut path_data = String::new();
+                path_file.read_to_string(&mut path_data).expect("Failed to open shader file!!");
                 let path_data_string = path_data.to_string();
                 let path_data_str = path_data_string.as_str();
                 context.include(path_file_str, path_data_str);
@@ -253,13 +271,6 @@ impl AsShaderFile for FileSys {
                 directory = path_path.read_dir().unwrap();
             }
             current_path = directory.next();
-            if current_path.is_none() {
-                if path_stack.is_empty() {
-                    break;
-                }
-                directory = path_stack.pop().unwrap();
-                current_path = directory.next();
-            }
         }
         return context;
     }

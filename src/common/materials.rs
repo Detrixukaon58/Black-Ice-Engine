@@ -41,18 +41,13 @@ pub struct Shader{
 
 impl Shader {
     fn new(path_to_shaders: String) -> Shader {
-        let mut sub = 0;
-        for i in ((&path_to_shaders).len())..0 {
-            if path_to_shaders.chars().nth(i).unwrap() == '\\' {
-                sub = i;
-                break;
-            }
-        }
-        let file_name = path_to_shaders.split_at(sub).1;
-        let file_name_init = file_name.split(".").collect::<Vec<&str>>()[0];
-        let frag_path = format!("{}\\{}.frag", path_to_shaders, file_name_init);
+
+        let mut sub = path_to_shaders.chars().count() - path_to_shaders.chars().rev().position(|v| (v == '\\' || v == '/')).unwrap();
+        
+        let file_name_init = &path_to_shaders[sub..(&path_to_shaders.chars().count() - 5)];
+        let frag_path = format!("{}/{}.frag", path_to_shaders, file_name_init);
         let frag_file = AssetPath::new(frag_path).open_as_file().as_shader_file(shaderc::ShaderKind::Fragment);
-        let vert_path = format!("{}\\{}.frag", path_to_shaders, file_name_init);
+        let vert_path = format!("{}/{}.vert", path_to_shaders, file_name_init);
         let vert_file = AssetPath::new(vert_path).open_as_file().as_shader_file(shaderc::ShaderKind::Vertex);
         Shader {shader_name: String::from(file_name_init), fragment_file:  frag_file, vertex_file: vert_file, is_compiled: false}
     }
@@ -109,7 +104,7 @@ pub enum ShaderType {
     DVec3([f64; 3]),
     DVec4([f64; 4]),
     DVec2([f64; 2]),
-    Sampler2D(Vec<f32>),
+    Sampler2D(Vec<u32>, u32, u32),
 
 }
 
@@ -150,7 +145,7 @@ impl Base for Material{}
 
 impl New<Material> for Material {
     fn new() -> Material {
-        return Material {shader: Shader::new("ASSET:/shaders/slim-shader.shad".to_string()),shader_descriptor: HashMap::new() };
+        return Material {shader: Shader::new("ASSET:/shaders/slim-shadey.shad".to_string()),shader_descriptor: HashMap::new() };
     }
 }
 

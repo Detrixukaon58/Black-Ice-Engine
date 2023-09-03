@@ -2,7 +2,13 @@
     "rust-analyzer.linkedProjects": [
         ".\\Cargo.toml",
         ".\\Cargo.toml",
-        "Cargo.toml"
+        "Cargo.toml",
+        ".\\Cargo.toml",
+        ".\\Cargo.toml",
+        ".\\Cargo.toml",
+        ".\\Cargo.toml",
+        ".\\Cargo.toml",
+        ".\\Cargo.toml"
     ],
     "actionButtons": {
 
@@ -31,7 +37,7 @@
         ]
     },
     "rust-analyzer.debug.engineSettings": {},
-    "rust-analyzer.cargo.features": ["vulkan"],
+    "rust-analyzer.cargo.features": ["opengl"],
     "rust-analyzer.cargo.extraArgs": [],
     "lldb.verboseLogging": true,
     "lldb.launch.terminal": "integrated"

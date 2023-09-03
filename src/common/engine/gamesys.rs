@@ -5,11 +5,13 @@ use std::collections::HashMap;
 use std::any::Any;
 use std::string;
 use crate::common;
-use crate::common::angles::QuatConstructor;
+use crate::common::angles::{QuatConstructor, Quat};
+use crate::common::components::component_system::Constructor;
+use crate::common::matrices::M34;
 use crate::common::vertex::V3New;
-use crate::common::{*, mesh::Mesh, components::{component_system::ComponentSystem, entity::entity_system::*}};
-use std::sync::{Arc, Mutex};
-use ash::extensions::ext::DebugUtils;
+use crate::common::{*, mesh::Mesh, components::{component_system::*, entity::{entity_system::*, *}}};
+use std::sync::Arc;
+use parking_lot::*;
 use futures::join;
 use sdl2::*;
 
@@ -183,29 +185,34 @@ pub struct Game {
 
     pub gameName: Arc<Mutex<String>>,
     pub REGISTRAR: components::component_system::ComponentRef<Registry>,
-    RENDER_SYS: components::component_system::ComponentRef<RenderPipelineSystem>,
+    RENDER_SYS: Arc<RwLock<RenderPipelineSystem>>,
     ENTITY_SYS: components::component_system::ComponentRef<EntitySystem>,
     pub STATUS: Arc<Mutex<StatusCode>>,
     pub sdl: sdl2::Sdl,
     pub window: sdl2::video::Window,
     pub video: sdl2::VideoSubsystem,
     pub event_pump: Option<sdl2::EventPump>,
+    pub window_x: u32,
+    pub window_y: u32,
 }
 
 impl Game {
     pub unsafe fn isExit() -> bool {
-        *GAME.STATUS.lock().unwrap() == StatusCode::CLOSE
+        *GAME.STATUS.lock() == StatusCode::CLOSE
     }
 
     pub fn new() -> Game{
         let reg = components::component_system::ComponentRef_new(Registry {reg: Lazy::new(
             || {HashMap::<Box<&str>,Box<Register>>::new()}
         )});
-        let render_sys = components::component_system::ComponentRef_new(RenderPipelineSystem::new());
+        let render_sys = Arc::new(RwLock::new(RenderPipelineSystem::new()));
 
         let sdl = init().expect("Failed to initialise SDL!!");
         let video = sdl.video().expect("Failed to get video.");
-        let window = video.window("Game Window", 800, 600)
+        let x = 800;
+        let y = 600;
+        #[cfg(feature = "vulkan")]
+        let window = video.window("Game Window", x, y)
             .position_centered()
             .vulkan()
             .resizable()
@@ -213,6 +220,14 @@ impl Game {
             .expect("Failed to build window!")
         ;
 
+        #[cfg(feature = "opengl")]
+        let window = video.window("Game Window", x, y)
+            .position_centered()
+            .opengl()
+            .resizable()
+            .build()
+            .expect("Failed to build window!")
+        ;
         let ent_sys = components::component_system::ComponentRef_new(EntitySystem::new());
 
         Game { 
@@ -225,6 +240,8 @@ impl Game {
             window: window,
             video: video,
             event_pump: None,
+            window_x: x,
+            window_y: y
         }
     }
 
@@ -239,14 +256,14 @@ impl Game {
             let render_join_handle = std::thread::Builder::new().name(String::from("render")).spawn(|| {RenderPipelineSystem::init(p_render_sys)}).expect("Failed to create render thread!!");
             let entity_join_handle = std::thread::Builder::new().name(String::from("entity")).spawn(|| {EntitySystem::init(p_entity_sys)}).expect("Failed to start entity thread!!");
             let p_ent_sys_2 = self.ENTITY_SYS.clone();
-            let mut ent_sys_2 = p_ent_sys_2.lock().unwrap();
+            let mut ent_sys_2 = p_ent_sys_2.lock();
             let mut entity_params = components::entity::entity_system::EntityParams {
                 position: vertex::Vec3::new(0, 0, 0),
-                rotation: angles::Quat::new(0.0, 0.0, 1.0, 0.0),
-                scale: vertex::Vec3::new(0, 0, 0),
+                rotation: angles::Quat::axis_angle(Vec3::new(0.0, 0.0, 0.0), 0.0),
+                scale: vertex::Vec3::new(1.0, 1.0, 1.0),
 
             };
-            let p_entity = ent_sys_2.add_entity(entity_params);
+            let mut p_entity = ent_sys_2.add_entity(entity_params);
             drop(ent_sys_2);
             let def: common::components::component_system::Value = common::components::component_system::ValueBuilder::new().from_str(r#"
             {
@@ -256,7 +273,25 @@ impl Game {
             }
             "#).build();
             println!("{}", def["image_file"]);
-            Entity::add_component::<components::entity::image_component::Image>(p_entity, Arc::new(def));
+            p_entity.add_component::<components::entity::image_component::Image>(Arc::new(def));
+            let cam_def = components::entity::camera_component::CameraComponent::default_constuctor_definition();
+            
+
+            let pipe = PipelineParams {name: "Test Pipeline".to_string(), layer: 0};
+
+            use mesh::*;
+            let mesh_def = mesh_component::MeshComponent::default_constuctor_definition();
+            unsafe {
+                let pipe_id = RenderPipelineSystem::resgister_pipeline(pipe);
+            }
+            p_entity.add_component::<components::entity::camera_component::CameraComponent>(cam_def);
+            let mut p_mesh = p_entity.add_component::<mesh_component::MeshComponent>(mesh_def);
+            let mut mesh = p_mesh.lock();
+            // mesh.triangles();
+            mesh.square();
+            // mesh.transform.rotate(Quat::euler(45.0, 0.0, 0.0));
+            drop(mesh);
+
             // here we loop for the events
             'running: loop {
                 for event in self.event_pump.as_mut().unwrap().poll_iter() {
@@ -266,9 +301,22 @@ impl Game {
                             println!("Close sent");
                             break 'running;
                         }
+                        event::Event::Window { timestamp, window_id, win_event } => {
+                            match win_event {
+                                event::WindowEvent::Resized(x, y) => {
+                                    self.window_x = x as u32;
+                                    self.window_y = y as u32;
+                                }
+                                _ => {}
+                            }
+                        }
                         _ => continue
                     }
                 }
+                // let mut mesh = p_mesh.lock();
+                // mesh.rotate(Quat::euler(1.0, 0.0, 0.0));
+                // drop(mesh);
+                
             }
 
             self.window.hide();
@@ -283,7 +331,7 @@ impl Game {
     }
 
     unsafe fn set_status(status: StatusCode){
-        *GAME.STATUS.lock().unwrap() = status.clone();
+        *GAME.STATUS.lock() = status.clone();
         let p_rend = Game::get_render_sys().clone();
         let p_ent = Game::get_entity_sys().clone();
 
@@ -297,7 +345,7 @@ impl Game {
         return;
     }
 
-    pub unsafe fn get_render_sys() -> components::component_system::ComponentRef<RenderPipelineSystem> {
+    pub unsafe fn get_render_sys() -> Arc<RwLock<RenderPipelineSystem>> {
         GAME.RENDER_SYS.clone()
     }
 

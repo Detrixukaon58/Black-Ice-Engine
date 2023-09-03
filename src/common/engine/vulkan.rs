@@ -1,6 +1,10 @@
 #![allow(unused)]
+#![cfg(feature = "vulkan")]
 extern crate raw_window_handle;
 use std::sync::*;
+use ash::vk::PipelineLayout;
+use ash::vk::RenderPass;
+use ash::vk::ShaderModule;
 use colored::*;
 
 use ash::*;
@@ -16,14 +20,14 @@ use crate::common::filesystem::files::ShaderFile;
 use super::gamesys::*;
 use super::pipeline::*;
 
-#[cfg(feature = "vulkan")]
+
 pub trait VulkanRender {
     fn init(p_this: Arc<Mutex<Self>>) -> i32;
     fn render(p_this: Arc<Mutex<Self>>) -> i32;
     fn init_mesh(p_this: Arc<Mutex<Self>>) -> i32;
 }
 
-#[cfg(feature = "vulkan")]
+
 impl VulkanRender for Pipeline {
     fn init(p_this: Arc<Mutex<Self>>) -> i32 {
         
@@ -52,7 +56,7 @@ impl VulkanRender for Pipeline {
     }
 }
 
-#[cfg(feature = "vulkan")]
+
 #[derive(Default, Clone)]
 pub struct DriverValues {
     pub entry: Option<Entry>,
@@ -74,7 +78,7 @@ pub struct DriverValues {
 }
 
 
-#[cfg(feature = "vulkan")]
+
 #[derive(Clone, Default)]
 struct QueueFamiltyIdices {
     graphics_family: Option<u32>,
@@ -82,19 +86,32 @@ struct QueueFamiltyIdices {
     transfer_family: Option<u32>,
 }
 
-#[cfg(feature = "vulkan")]
+
 impl QueueFamiltyIdices {
     pub fn is_complete(&self) -> bool {
         self.graphics_family.is_some() && self.present_family.is_some()
     }
 }
 
-#[cfg(feature = "vulkan")]
+
 #[derive(Clone, Default)]
 struct SwapChainSupportDetals {
     capabilities: vk::SurfaceCapabilitiesKHR,
     formats: Vec<vk::SurfaceFormatKHR>,
     present_modes: Vec<vk::PresentModeKHR>,
+}
+
+pub struct PipelineValues {
+    pub render_pass: RenderPass, 
+    pub graphics_pipeline: vk::Pipeline, 
+    pub pipeline_layout: PipelineLayout, 
+    pub shader_modules: Vec<ShaderModule>
+}
+
+impl PipelineValues {
+    pub fn new(render_pass: RenderPass, graphics_pipeline: vk::Pipeline, pipeline_layout: PipelineLayout, shader_modules: Vec<ShaderModule>) -> Self{
+        Self { render_pass: render_pass, graphics_pipeline: graphics_pipeline, pipeline_layout: pipeline_layout, shader_modules: shader_modules }
+    }
 }
 
 impl DriverValues {
@@ -216,7 +233,7 @@ impl DriverValues {
     // Create a custom pipeline function and a compute pipeline function!!
 
     #[cfg(feature = "vulkan")]
-    pub unsafe fn create_graphics_pipeline(driver: &Self, stage: usize) -> (vk::RenderPass, vk::Pipeline, vk::PipelineLayout, Vec<vk::ShaderModule>) {
+    pub unsafe fn create_graphics_pipeline(driver: &Self, stage: usize) -> PipelineValues {
 
         
         assert!(!driver.shader_stages.is_empty());
@@ -378,7 +395,7 @@ impl DriverValues {
         let graphics_pipeline = logical_device.create_graphics_pipelines(std::mem::zeroed(), vec![graphics_pipeline_info].as_slice(), None)
             .expect("Failed to create Graphics Pipeline!!!")[0];
 
-        (render_pass, graphics_pipeline, pipeline_layout, vec![frag_module, vert_module])
+        PipelineValues::new(render_pass, graphics_pipeline, pipeline_layout, vec![frag_module, vert_module])
         
     }
 

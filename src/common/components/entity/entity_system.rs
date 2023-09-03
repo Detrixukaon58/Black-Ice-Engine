@@ -1,11 +1,11 @@
 // TODO: Make an entity registration system to allow for components to be registered to an entity
 #![allow(unused)]
-use std::{any::*, thread::JoinHandle, collections::*, sync::{*, atomic::AtomicU32}, future::*, pin::*, ops::DerefMut};
+use std::{any::*, thread::JoinHandle, collections::*, sync::{Arc, atomic::*}, future::*, pin::*, ops::DerefMut, alloc::Layout};
 use serde::*;
 use bitmask_enum::*;
 
-use crate::common::{engine::{gamesys::*, threading::ThreadData}, vertex::*, angles::*, components::{component_system::*, entity}};
-
+use crate::common::{engine::{gamesys::*, threading::ThreadData}, vertex::*, angles::*, components::{component_system::{*, self}, entity}, transform::{self, Transform}, matrices::Matrix34};
+use parking_lot::*;
 use colored::*;
 
 use self::entity_event::*;
@@ -14,73 +14,84 @@ pub type EntityID = u32;
 
 pub struct Entity {
     pub entity_id: EntityID,
-    pub position: Vec3,
-    pub rotation: Quat,
-    pub scale: Vec3,
+    transform: transform::Transform,
     component_system: ComponentRef<Vec<ComponentRef<dyn BaseComponent>>>,
     thread_reciever: Arc<Mutex<Vec<EventThreadData>>>,
-    is_dead: bool
 }
 
 unsafe impl Sync for Entity {}
 
 impl Base for Entity{}
 
-impl Default for Entity {
-    fn default() -> Self {
-        Self { 
-            entity_id: Default::default(), 
-            position: Default::default(), 
-            rotation: Default::default(), 
-            scale: Default::default(),
-            component_system: ComponentRef_new(Vec::<ComponentRef<dyn BaseComponent>>::new()),
-            thread_reciever: Arc::new(Mutex::new(Vec::new())),
-            is_dead: false
-        }
+impl std::ops::Deref for Entity {
+    type Target = Entity;
+    fn deref(&self) -> &Self::Target {
+        self
     }
 }
+
+impl DerefMut for Entity {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self
+    }
+}
+
+// impl Default for Entity {
+//     fn default() -> Self {
+//         Self { 
+//             entity_id: Default::default(),
+//             transform: transform::Transform::default(),
+//             component_system: ComponentRef_new(Vec::<ComponentRef<dyn BaseComponent>>::new()),
+//             thread_reciever: Arc::new(Mutex::new(Vec::new())),
+//             is_dead: false
+//         }
+//     }
+// }
 
 impl Reflection for Entity{
     fn register_reflect(&'static self) -> Ptr<Register<>> {
         let mut registration:  Box<Register> = Box::new(Register::new(Box::new(self)));
 
-        registration.addProp(Property { 
-            name: Box::new("position"), 
-            desc: Box::new("position of the Entity"), 
-            reference: Box::new(&self.position), 
-            ref_type: TypeId::of::<Vec3>() 
-        });
-        registration.addProp(Property { 
-            name: Box::new("rotation"), 
-            desc: Box::new("rotation of the Entity"), 
-            reference: Box::new(&self.rotation), 
-            ref_type: TypeId::of::<Quat>() 
-        });
-        registration.addProp(Property { 
-            name: Box::new("scale"), 
-            desc: Box::new("scale of the Entity"), 
-            reference: Box::new(&self.scale), 
-            ref_type: TypeId::of::<Vec3>() 
-        });
+        // registration.addProp(Property { 
+        //     name: Box::new("position"), 
+        //     desc: Box::new("position of the Entity"), 
+        //     reference: Box::new(&self.position), 
+        //     ref_type: TypeId::of::<Vec3>() 
+        // });
+        // registration.addProp(Property { 
+        //     name: Box::new("rotation"), 
+        //     desc: Box::new("rotation of the Entity"), 
+        //     reference: Box::new(&self.rotation), 
+        //     ref_type: TypeId::of::<Quat>() 
+        // });
+        // registration.addProp(Property { 
+        //     name: Box::new("scale"), 
+        //     desc: Box::new("scale of the Entity"), 
+        //     reference: Box::new(&self.scale), 
+        //     ref_type: TypeId::of::<Vec3>() 
+        // });
 
         return Ptr {b: registration};
     }
 }
 
 impl Entity {
-    pub fn add_component<T>(this: ComponentRef<Self>, definition: ConstructorDefinition) -> ComponentRef<T> where T: BaseComponent + Constructor<T> {
+    pub fn add_component<T>(this: &mut EntityPtr, definition: ConstructorDefinition) -> ComponentRef<T> where T: BaseComponent + Constructor<T> {
         unsafe{
 
             println!("{}", "Adding component to Entity!!".bright_red());
             let p_entity = this.clone();
             let component = T::construct(p_entity, &definition).unwrap();
+            let mut c = component.lock();
+            c.process_event(&Event::init_event());
+            drop(c);
             'test: loop{
                 let entity = match this.try_lock() {
-                    Ok(ent) => ent,
-                    Err(err) => continue 'test
+                    Some(ent) => ent,
+                    None => continue 'test
                 };
                 let p_comp_sys = entity.component_system.clone();
-                let mut comp_sys = p_comp_sys.lock().unwrap();
+                let mut comp_sys = p_comp_sys.lock();
                 comp_sys.push(component.clone());
                 drop(entity);
                 drop(comp_sys);
@@ -91,80 +102,121 @@ impl Entity {
         }
     }
 
-    pub fn init<'a>(this: ComponentRef<Self>) -> i32 {
+    pub fn init<'a>(this: &mut EntityPtr) -> i32 {
         Self::processing(this)
     }
 
     pub fn collect_component(p_this: ComponentRef<Vec<ComponentRef<dyn BaseComponent>>>, count: usize) -> ComponentRef<dyn BaseComponent> {
-        let this = p_this.lock().unwrap();
+        let this = p_this.lock();
         return this[count].clone();
     }
 
     fn len(p_this: ComponentRef<Vec<ComponentRef<dyn BaseComponent>>>) -> usize {
-        let this = p_this.lock().unwrap();
+        let this = p_this.lock();
         return this.len().clone();
     }
 
-    fn processing(p_this: ComponentRef<Self>) -> i32 {
+    fn processing(p_this: &mut EntityPtr) -> i32 {
         'run: loop{
             let mut this = match p_this.try_lock() {
-                Ok(ent) => ent,
-                Err(err) => continue 'run
+                Some(ent) => ent,
+                None => continue 'run
             };
             let p_recv = this.thread_reciever.clone();
-            let mut recv = p_recv.try_lock();
-            if let Ok(ref mut mutex) = recv {
-                for th in mutex.as_slice() {
-                    let data = th.clone();
-                    
-                    match data {
-                        EventThreadData::Event(event) => {
-                            let p_comp_sys = this.component_system.clone();
-                            let mut i = 0;
-                            while i < Self::len(p_comp_sys.clone()){
-                                let p_component = Self::collect_component(p_comp_sys.clone(), i);
-                                let mut component = p_component.lock().unwrap();
-                                if(component.get_event_mask().contains(event.event_flag)){
-                                    component.process_event(&event);
-                                }
-                                i += 1;
-                            }
-                            
-                        },
-                        EventThreadData::KillEvent() => {
-                            let p_comp_sys = this.component_system.clone();
-                            let comp_sys = p_comp_sys.lock().unwrap();
-                            for p_component in  comp_sys.to_vec(){
-                                drop(p_component);
-                            }
-                            this.is_dead = true;
-                            break 'run;
-                        }
-                        _ => {},
-                    }
-                }
-                mutex.clear();
-            }
-            drop(recv);
+            let p_comp_sys = this.component_system.clone();
             drop(this);
-            std::thread::sleep(std::time::Duration::from_millis(5));
+            let mut i = 0;
+            let event = Event::update_event();
+            while i < Self::len(p_comp_sys.clone()){
+                let p_component = Self::collect_component(p_comp_sys.clone(), i);
+                let mut component = p_component.lock();
+                if(component.get_event_mask().contains(event.event_flag)){
+                    component.process_event(&event);
+                }
+                i += 1;
+            }
+            let mut j = 0;
+            while let Some(th) = Entity::get_event(&p_recv, j) {
+                let data = th.clone();
+                if Entity::check_kill(&p_recv) {
+                    // kill it early and quickly!!
+                    let comp_sys = p_comp_sys.lock();
+                    for p_component in  comp_sys.to_vec(){
+                        drop(p_component);
+                    }
+                    break 'run;
+                }
+                match data {
+                    EventThreadData::Event(event) => {
+                        let mut i = 0;
+                        while i < Self::len(p_comp_sys.clone()){
+                            let p_component = Self::collect_component(p_comp_sys.clone(), i);
+                            let mut component = p_component.lock();
+                            if(component.get_event_mask().contains(event.event_flag)){
+                                component.process_event(&event);
+                            }
+                            i += 1;
+                        }
+                    },
+                    EventThreadData::KillEvent() => {
+                        let comp_sys = p_comp_sys.lock();
+                        for p_component in  comp_sys.to_vec(){
+                            drop(p_component);
+                        }
+                        break 'run;
+                    }
+                    _ => {},
+                }
+                j += 1;
+            }
+
+            
+            
         }
         println!("{}", "Killed Entity".red());
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        
         0
     }
 
-    pub fn send_event(this: ComponentRef<Self>, event: EventThreadData){
+    fn get_event(p_recv: &Arc<Mutex<Vec<EventThreadData>>>, i: usize) -> Option<EventThreadData> {
+        let recv = p_recv.try_lock();
+        match recv {
+            Some(mut r) => {
+                if i < r.len() {
+                    Some(r[i].clone())
+                }
+                else {
+                    None
+                }
+            }
+            None => None
+        }
+    }
+
+    fn check_kill(p_recv: &Arc<Mutex<Vec<EventThreadData>>>) -> bool {
+        let recv = p_recv.try_lock();
+        match recv {
+            Some(mut r) => {
+                r.iter().find(|v| match *v {
+                    EventThreadData::KillEvent() => true,
+                    _ => false
+                }).is_some()
+            }
+            None => false
+        }
+    }
+
+    pub fn send_event(this: EntityPtr, event: EventThreadData){
         'test: loop {
             let entity = match this.try_lock() {
-                Ok(ent) => ent,
-                Err(err) => continue 'test
+                Some(ent) => ent,
+                None => continue 'test
             };
             let p_recv = entity.thread_reciever.clone();
             'test2: loop{
                 let mut recv = match p_recv.try_lock() {
-                    Ok(re) => re,
-                    Err(err) => continue 'test2
+                    Some(re) => re,
+                    None => continue 'test2
                 };
                 match event {
                     EventThreadData::KillEvent() => {
@@ -178,6 +230,116 @@ impl Entity {
         }
     }
 }
+
+#[derive(Clone)]
+pub struct EntityPtr {
+    entity: Arc<Mutex<Entity>>,
+}
+
+impl EntityPtr {
+    pub fn new(entity_id: EntityID, transform: Transform) -> Self {
+        unsafe{
+            let layout = Layout::new::<Entity>();
+            let entity = ComponentRef_new(Entity{
+                entity_id: entity_id,
+                transform: transform,
+                component_system: ComponentRef_new(Vec::<ComponentRef<dyn BaseComponent>>::new()),
+                thread_reciever: ComponentRef_new(Vec::new()),
+            });
+            Self { entity: entity}
+        }
+    }
+
+    pub fn lock<'a>(&self) -> MutexGuard<'_, Entity> {
+        self.entity.lock()
+    }
+
+    pub fn try_lock<'a>(&self) -> Option<MutexGuard<'_, Entity>>
+    {
+        self.entity.try_lock()
+    }
+
+    pub fn get_world_tm(&self) -> Matrix34
+    {
+        let entity = self.entity.lock();
+        entity.transform.get_world_tm()
+    }
+
+    pub fn set_world_tm(&mut self) {
+
+    }
+
+    pub fn rotate(&mut self, rotation: Quat) {
+        let mut entity = self.entity.lock();
+        entity.transform.rotate(rotation);
+    }
+
+    pub fn translate(&mut self, translation: Vec3) {
+        let mut entity = self.entity.lock();
+        entity.transform.translate(translation);
+    }
+
+    pub fn set_rotaion(&mut self, rotation: Quat) {
+        let mut entity = self.entity.lock();
+        entity.transform.set_rotation(rotation);
+    }
+
+    pub fn set_position(&mut self, position: Vec3) {
+        let mut entity = self.entity.lock();
+        entity.transform.set_position(position);
+    }
+
+    pub fn set_scale(&mut self, scale: Vec3) {
+        let mut entity = self.entity.lock();
+        entity.transform.set_scale(scale);
+    }
+
+    pub fn get_rotation(&self) -> Quat {
+        let entity = self.entity.lock();
+        entity.transform.rotation.clone()
+    }
+
+    pub fn get_position(&self) -> Vec3 {
+        let entity = self.entity.lock();
+        entity.transform.position.clone()
+    }
+
+    pub fn get_scale(&self) -> Vec3 {
+        let entity = self.entity.lock();
+        entity.transform.scale.clone()
+    }
+
+    pub fn get_component<T>(&self) -> Option<ComponentRef<T>> where T: BaseComponent + Constructor<T>{
+        let entity = self.entity.lock();
+        let p_comp_sys = entity.component_system.clone();
+        let mut i = 0;
+        while i < Entity::len(p_comp_sys.clone()){
+            let p_component = Entity::collect_component(p_comp_sys.clone(), i);
+            if(p_component.type_id() == TypeId::of::<ComponentRef<T>>()){
+                Some(p_component.clone());
+            }
+            i += 1;
+        }
+        None
+    }
+
+    pub fn get_or_create_component<T>(&mut self, default: ConstructorDefinition) -> ComponentRef<T> where T: BaseComponent + Constructor<T> {
+        match self.get_component::<T>() {
+            Some(p) => p,
+            None => {
+                Entity::add_component(self, default)
+            }
+        }
+    }
+    
+    pub fn add_component<T>(&mut self, definition: ConstructorDefinition) -> ComponentRef<T> where T: BaseComponent + Constructor<T> {
+        Entity::add_component(self, definition)
+    }
+}
+
+unsafe impl Sync for EntityPtr {}
+unsafe impl Send for EntityPtr {}
+
 
 pub struct EntityParams {
     pub position: Vec3,
@@ -261,13 +423,12 @@ pub mod entity_event{
 }
 
 pub struct EntitySystem {
-    entities: Box<Vec<ComponentRef<Entity>>>,
+    entities: Box<Vec<EntityPtr>>,
     entity_join_handles: Vec<(EntityID, JoinHandle<i32>)>,
     system_status: Arc<Mutex<StatusCode>>,
     thread_reciever: Arc<Mutex<Vec<ThreadData>>>,
     counter: AtomicU32,
 }
-
 
 impl EntitySystem {
     pub fn new() -> EntitySystem {
@@ -286,7 +447,7 @@ impl EntitySystem {
     pub fn init<'a>(this: Arc<Mutex<Self>>){
         unsafe{
             println!("Spawned Entity System!!");
-            Self::processing(&mut this.lock().unwrap());
+            Self::processing(&mut this.lock());
         }
     }
 
@@ -295,7 +456,7 @@ impl EntitySystem {
         while !Game::isExit() {
             let p_recv = this.thread_reciever.clone();
             let mut recv = p_recv.try_lock();
-            if let Ok(ref mut mutex) = recv {
+            if let Some(ref mut mutex) = recv {
                 for th in mutex.as_slice() {
                     let data = th.clone();
                     
@@ -307,17 +468,17 @@ impl EntitySystem {
                         ThreadData::Vec3(vec3) => todo!(),
                         ThreadData::Quat(quat) => todo!(),
                         ThreadData::Entity(entity) => {
-                            let p_entity = entity.clone();
-                            let ent = p_entity.lock().unwrap();
+                            let mut p_entity = entity.clone();
+                            let ent = p_entity.lock();
                             let id = ent.entity_id.clone();
                             drop(ent);
                             this.entities.push(entity);
-                            let join_handle = std::thread::Builder::new().spawn(|| {Entity::init(p_entity)}).unwrap();
+                            let join_handle = std::thread::Builder::new().spawn(move || {Entity::init(&mut p_entity)}).unwrap();
                             this.entity_join_handles.push((id, join_handle));
                             
                         },
                         ThreadData::Status(status) => {
-                            let mut sys_status = this.system_status.lock().unwrap();
+                            let mut sys_status = this.system_status.lock();
                             *sys_status = status;
                         }
                         ThreadData::EntityEvent(event) => {
@@ -360,18 +521,23 @@ impl EntitySystem {
             //     }
             // }
             //println!("dodo");
-            this.send_event(Event::update_event());
-            std::thread::sleep(std::time::Duration::from_millis(5));
+            //this.send_event(Event::update_event());
+            // std::thread::sleep(std::time::Duration::from_millis(5));
         }
         println!("Closing Entity System thread!");
 
         for p_entity in this.entities.to_vec() {
-            let entity = p_entity.lock().unwrap();
+            let entity = p_entity.lock();
             let p_recv = entity.thread_reciever.clone();
-            let mut recv = p_recv.lock().unwrap();
+            let mut recv = p_recv.lock();
             recv.insert(0, EventThreadData::KillEvent());
             drop(recv);
-            std::thread::sleep(std::time::Duration::from_millis(5));
+            
+        }
+        for handle in &this.entity_join_handles {
+            while !handle.1.is_finished() {
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
         }
         std::thread::sleep(std::time::Duration::from_millis(50));
         this.entities.clear();
@@ -394,45 +560,44 @@ impl EntitySystem {
 
     pub fn send_event(&mut self, event: Event) {
         let p_recv = self.thread_reciever.clone();
-        let mut recv = p_recv.lock().unwrap();
+        let mut recv = p_recv.lock();
         recv.push(ThreadData::EntityEvent(event));
     }
 
     pub fn is_alive(this: &mut Self) -> bool {
         let p_sys_status = this.system_status.clone();
-        let sys_status = p_sys_status.lock().unwrap();
+        let sys_status = p_sys_status.lock();
         *sys_status != StatusCode::CLOSE
     }
 
     pub fn send_status(p_this: ComponentRef<Self>, status: StatusCode) {
-        let this = p_this.lock().unwrap();
+        let this = p_this.lock();
         let p_stat = this.system_status.clone();
-        let mut stat = p_stat.lock().unwrap();
+        let mut stat = p_stat.lock();
         stat = stat;
     }
 
-    pub fn add_entity(&mut self, params: EntityParams) -> ComponentRef<Entity> {
-        let entity = Arc::new(Mutex::new(Entity{
-            entity_id: self.counter.fetch_add(1, atomic::Ordering::Relaxed),
-            position: params.position,
-            rotation: params.rotation,
-            scale: params.scale,
-            component_system: ComponentRef_new(Vec::<ComponentRef<dyn BaseComponent>>::new()),
-            thread_reciever: ComponentRef_new(Vec::new()),
-            is_dead: false
-        }));
+    pub fn add_entity(&mut self, params: EntityParams) -> EntityPtr {
+        let id = self.counter.fetch_add(1, Ordering::Relaxed);
+        let mut trans = transform::Transform::new(params.position, params.rotation, params.scale);
+        use transform::TransformSetEntity;
+        trans.set_entity(id.clone());
+        let entity = EntityPtr::new(
+            id,
+            trans
+        );
         let p_recv = self.thread_reciever.clone();
-        let recv = p_recv.lock();
-        recv.unwrap().push(ThreadData::Entity(entity.clone()));
+        let mut recv = p_recv.lock();
+        recv.push(ThreadData::Entity(entity.clone()));
         entity
     }
 
-    pub fn get_entity(&mut self, entity_id: EntityID) -> Option<ComponentRef<Entity>> {
+    pub fn get_entity(&mut self, entity_id: EntityID) -> Option<EntityPtr> {
         let p_ents = self.entities.clone();
         let mut entity = None;
         for pp_ent in p_ents.to_vec() {
             let p_ent = pp_ent.clone();
-            let ent = p_ent.lock().unwrap();
+            let ent = p_ent.lock();
             if ent.entity_id == entity_id {
                 entity = Some(pp_ent.clone());
                 break;

@@ -1,3 +1,5 @@
+use std::{f32::consts::PI, fmt::Display};
+
 #[allow(unused_imports)]
 use crate::common::vertex::*;
 use serde::*;
@@ -10,6 +12,20 @@ pub struct Ang3 {
     pub p : f32,
     pub r : f32
 }
+
+impl Display for Ang3 {
+    fn fmt(&self, f: &mut __private::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Ang3({x}, {y}, {z})", x=self.y, y=self.p, z=self.r)
+    }
+}
+
+impl Ang3 {
+
+    pub fn new(y: f32, p: f32, r:f32) -> Ang3 {
+        Ang3 { y: y, p: p, r: r }
+    }
+}
+
 
 #[derive(Copy, Clone, Serialize, Deserialize)]
 pub struct Quat {
@@ -42,4 +58,102 @@ pub trait QuaternionMath {
 
 
 
+}
+
+impl Display for Quat {
+    fn fmt(&self, f: &mut __private::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Quat({x}, {y}, {z}, {w})", x=self.x, y=self.y, z=self.z, w=self.w)
+    }
+}
+
+impl Quat {
+
+    /// ypr as degrees!!
+    pub fn euler(y: f32, p: f32, r: f32) -> Self
+    {
+        let deg_to_rad = std::f32::consts::PI / 180.0;
+        // let cr = (r * deg_to_rad * 0.5).cos();
+        // let sr = (r * deg_to_rad * 0.5).sin();
+        // let cp = (p * deg_to_rad * 0.5).cos();
+        // let sp = (p * deg_to_rad * 0.5).sin();
+        // let cy = (y * deg_to_rad * 0.5).cos();
+        // let sy = (y * deg_to_rad * 0.5).sin();
+        // Self { 
+        //     x: cr * cp * cy + sr * sp * sy, 
+        //     y: sr * cp * cy - cr * sp * sy, 
+        //     z: cr * sp * cy + sr * cp * sy, 
+        //     w: cr * cp * sy - sr * sp * cy 
+        // }
+
+        let _x = Quat::axis_angle(Vec3::new(1.0, 0.0, 0.0), y * deg_to_rad);
+        let _y = Quat::axis_angle(Vec3::new(0.0, 1.0, 0.0), p * deg_to_rad);
+        let _z = Quat::axis_angle(Vec3::new(0.0, 0.0, 1.0), r * deg_to_rad);
+
+        
+        let tmp = _x * _y * _z;
+
+        // println!("{}", tmp);
+        tmp
+    }
+
+    pub fn axis_angle(vector: Vec3, angle: f32) -> Self
+    {
+        let s = (angle / 2.0).sin();
+        let c = (angle / 2.0).cos();
+
+        Self { x: vector.x * s, y: vector.y * s, z: vector.z * s, w: c }
+    }
+
+    pub fn mult(&mut self, rhs: Self){
+        
+        self.x = self.w * rhs.x + self.x * rhs.w + self.y * rhs.z - self.z * rhs.y;
+        self.y = self.w * rhs.y + self.y * rhs.w + self.x * rhs.z - self.z * rhs.x;
+        self.z = self.w * rhs.z + self.z * rhs.w + self.x * rhs.y - self.y * rhs.x;
+        self.w = self.w * rhs.w - self.x * rhs.x - self.y * rhs.y - self.z * rhs.z;
+    
+    }
+
+    pub fn conjugate(&mut self) {
+        self.x = -self.x;
+        self.y = -self.y;
+        self.z = -self.z;
+    }
+
+    pub fn to_euler(&self) -> Ang3 {
+        Ang3 {
+            y: (
+                (2.0 * (self.w * self.x + self.y * self.z)) / (1.0 - 2.0 *(self.x.powi(2) + self.y.powi(2)))
+            ).atan(),
+            p: -( PI / 2.0) + 2.0 * (
+                (
+                    (1.0 + 2.0 * (self.w * self.y - self.x * self.z)) / (1.0 - 2.0 * (self.w*self.y - self.x * self.z))
+                ).sqrt()
+            ).atan(),
+            r: (
+                (2.0 * (self.w*self.z + self.x * self.y)) / (1.0 - 2.0 * (self.y.powi(2) + self.z.powi(2)))
+            ).atan()
+        }
+    }
+
+    /// simply gets the axis for the rotation
+    pub fn as_vec3(&self) -> Vec3 {
+        let v = Vec3::new(self.x, self.y, self.z);
+        v
+    }
+}
+
+
+impl std::ops::Mul for Quat {
+    type Output = Self;
+    fn mul(self, rhs: Self) -> Self::Output {
+        let mut this = self.clone();
+        this.mult(rhs);
+
+        this
+    }
+}
+impl std::ops::MulAssign for Quat {
+    fn mul_assign(&mut self, rhs: Self) {
+        self.mult(rhs);
+    }
 }

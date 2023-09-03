@@ -1,7 +1,9 @@
 #![allow(unused)]
-use std::{thread::{Thread, JoinHandle}, any::{Any, TypeId}, sync::{atomic::AtomicBool, Arc, Mutex}, ops::IndexMut};
+use std::{thread::{Thread, JoinHandle}, any::{Any, TypeId}, sync::{atomic::AtomicBool, Arc}, ops::IndexMut};
 
-use crate::common::{vertex::*, angles::*, components::{entity::entity_system::*, component_system::{BaseComponent, ConstructorDefinition}}, engine::*, matrices::*};
+use crate::common::{vertex::*, angles::*, components::{entity::entity_system::*, component_system::{BaseComponent, ConstructorDefinition}}, engine::*, matrices::*, mesh::Mesh};
+use parking_lot::*;
+use super::pipeline::Camera;
 
 #[derive(Clone)]
 pub enum ThreadData {
@@ -11,12 +13,14 @@ pub enum ThreadData {
     Vec(Vec<ThreadData>),
     Vec3(Vec3),
     Quat(Quat),
-    Entity(Arc<Mutex<Entity>>),
+    Entity(EntityPtr),
     Component(EntityID, Arc<Mutex<dyn BaseComponent + Send>>),
     Pipeline(pipeline::PipelineParams),
     Status(gamesys::StatusCode),
     EntityEvent(entity_event::Event),
-    QuickDraw(Vec<Vertex>, Vec<(i32, i32, i32)>, Vec<[f32; 2]>, Vec<Vec4>)
+    QuickDraw(Vec<Vertex>, Vec<(i32, i32, i32)>, Vec<[f32; 2]>, Vec<Vec4>),
+    Mesh(u32, Arc<Mutex<Mesh>>),
+    Camera(u32, Camera)
 
 }
 
