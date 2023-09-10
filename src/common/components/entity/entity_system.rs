@@ -17,6 +17,8 @@ pub struct Entity {
     transform: transform::Transform,
     component_system: ComponentRef<Vec<ComponentRef<dyn BaseComponent>>>,
     thread_reciever: Arc<Mutex<Vec<EventThreadData>>>,
+    count: std::time::SystemTime,
+    p_avg: Arc<Mutex<Vec<f32>>>,
 }
 
 unsafe impl Sync for Entity {}
@@ -83,7 +85,9 @@ impl Entity {
             let p_entity = this.clone();
             let component = T::construct(p_entity, &definition).unwrap();
             let mut c = component.lock();
-            c.process_event(&Event::init_event());
+            let mut event = Event::init_event();
+            event.event_data.add_data("frame_time".to_string(), EventDataValue::Float(1.0));
+            c.process_event(&event);
             drop(c);
             'test: loop{
                 let entity = match this.try_lock() {
@@ -118,15 +122,28 @@ impl Entity {
 
     fn processing(p_this: &mut EntityPtr) -> i32 {
         'run: loop{
-            let mut this = match p_this.try_lock() {
-                Some(ent) => ent,
-                None => continue 'run
-            };
+            let mut this = p_this.lock();
             let p_recv = this.thread_reciever.clone();
             let p_comp_sys = this.component_system.clone();
+            let mut count = this.count.clone();
+            let p_avg = this.p_avg.clone();
+            this.count = std::time::SystemTime::now();
             drop(this);
+
+            let mut avg = p_avg.lock();
+            avg.push(1.0 / std::time::SystemTime::now().duration_since(count).unwrap().as_secs_f32());
+            let average = avg.iter().sum::<f32>() / avg.len() as f32;
+            // println!("{}", average);
+            if avg.len() > 60 {
+                avg.remove(0);
+            }
+            let time = std::time::Duration::from_millis(16).as_secs_f32() - avg.last().unwrap();
+            std::thread::sleep(std::time::Duration::from_secs_f32(if time > 0.0 {time} else {0.0}));
+            let frame_time = avg.iter().sum::<f32>() / avg.len() as f32;
+            drop(avg);
             let mut i = 0;
-            let event = Event::update_event();
+            let mut event = Event::update_event();
+            event.event_data.add_data("frame_time".to_string(), EventDataValue::Float(frame_time));
             while i < Self::len(p_comp_sys.clone()){
                 let p_component = Self::collect_component(p_comp_sys.clone(), i);
                 let mut component = p_component.lock();
@@ -147,8 +164,9 @@ impl Entity {
                     break 'run;
                 }
                 match data {
-                    EventThreadData::Event(event) => {
+                    EventThreadData::Event(mut event) => {
                         let mut i = 0;
+                        event.event_data.add_data("frame_time".to_string(), EventDataValue::Float(frame_time));
                         while i < Self::len(p_comp_sys.clone()){
                             let p_component = Self::collect_component(p_comp_sys.clone(), i);
                             let mut component = p_component.lock();
@@ -169,7 +187,6 @@ impl Entity {
                 }
                 j += 1;
             }
-
             
             
         }
@@ -245,6 +262,8 @@ impl EntityPtr {
                 transform: transform,
                 component_system: ComponentRef_new(Vec::<ComponentRef<dyn BaseComponent>>::new()),
                 thread_reciever: ComponentRef_new(Vec::new()),
+                count: std::time::SystemTime::now(),
+                p_avg: Arc::new(Mutex::new(Vec::new())),
             });
             Self { entity: entity}
         }
@@ -335,6 +354,11 @@ impl EntityPtr {
     pub fn add_component<T>(&mut self, definition: ConstructorDefinition) -> ComponentRef<T> where T: BaseComponent + Constructor<T> {
         Entity::add_component(self, definition)
     }
+
+    pub fn is_locked(&self) -> bool {
+        self.entity.is_locked()
+    }
+
 }
 
 unsafe impl Sync for EntityPtr {}
@@ -382,6 +406,8 @@ pub mod entity_event{
         Integer(i32),
         Vector3(Vec3),
         EntityID(EntityID),
+        Float(f32),
+        Double(f64),
 
     }
 
@@ -409,6 +435,10 @@ pub mod entity_event{
         pub fn default() -> Self {
             Self { data: HashMap::new() }
         }
+
+        pub fn add_data(&mut self, name: String, data: EventDataValue) {
+            self.data.insert(name, data);
+        }
     }
 
     impl Event {
@@ -423,23 +453,25 @@ pub mod entity_event{
 }
 
 pub struct EntitySystem {
-    entities: Box<Vec<EntityPtr>>,
-    entity_join_handles: Vec<(EntityID, JoinHandle<i32>)>,
+    p_entities: Arc<Mutex<Vec<EntityPtr>>>,
+    entity_join_handles: Arc<Mutex<Vec<(EntityID, JoinHandle<i32>)>>>,
     system_status: Arc<Mutex<StatusCode>>,
     thread_reciever: Arc<Mutex<Vec<ThreadData>>>,
     counter: AtomicU32,
+    ready: bool,
 }
 
 impl EntitySystem {
     pub fn new() -> EntitySystem {
-        let entities = Box::new(Vec::new());
+        let entities = Arc::new(Mutex::new(Vec::<EntityPtr>::new()));
 
         EntitySystem { 
-            entities: entities,
-            entity_join_handles: Vec::new(),
+            p_entities: entities,
+            entity_join_handles:  Arc::new(Mutex::new(Vec::new())),
             system_status: Arc::new(Mutex::new(StatusCode::INITIALIZE)),
             thread_reciever: Arc::new(Mutex::new(Vec::new())),
             counter: AtomicU32::new(1),
+            ready: false,
 
         }
     }
@@ -447,14 +479,28 @@ impl EntitySystem {
     pub fn init<'a>(this: Arc<Mutex<Self>>){
         unsafe{
             println!("Spawned Entity System!!");
-            Self::processing(&mut this.lock());
+            Self::processing(this);
         }
     }
 
-    pub unsafe fn processing(this: &mut Self) -> i32 {
+    pub unsafe fn processing(p_this: Arc<Mutex<Self>>) -> i32 {
         println!("Enter loop");
+        loop {
+            let mut this = p_this.lock();
+            let ready = this.ready.clone();
+            drop(this);
+            if ready {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
         while !Game::isExit() {
+            let mut this = p_this.lock();
             let p_recv = this.thread_reciever.clone();
+            let p_entities = this.p_entities.clone();
+            let p_ent_join = this.entity_join_handles.clone();
+            let system_status = this.system_status.clone();
+            drop(this);
             let mut recv = p_recv.try_lock();
             if let Some(ref mut mutex) = recv {
                 for th in mutex.as_slice() {
@@ -472,22 +518,24 @@ impl EntitySystem {
                             let ent = p_entity.lock();
                             let id = ent.entity_id.clone();
                             drop(ent);
-                            this.entities.push(entity);
-                            let join_handle = std::thread::Builder::new().spawn(move || {Entity::init(&mut p_entity)}).unwrap();
-                            this.entity_join_handles.push((id, join_handle));
+                            let mut entities = p_entities.lock();
+                            let mut entity_join_handles = p_ent_join.lock();
+                            entities.push(entity);
+                            let join_handle = std::thread::Builder::new().name(format!("Entity_{}", id.clone())).spawn(move || {Entity::init(&mut p_entity)}).unwrap();
+                            entity_join_handles.push((id, join_handle));
                             
                         },
                         ThreadData::Status(status) => {
-                            let mut sys_status = this.system_status.lock();
+                            let mut sys_status = system_status.lock();
                             *sys_status = status;
                         }
                         ThreadData::EntityEvent(event) => {
-                            
-                         for pp_entity in this.entities.to_vec() {
-                            let p_entity = pp_entity.clone();
-                            Entity::send_event(p_entity, EventThreadData::Event(event.clone()));
-                            
-                         }
+                            let mut entities = p_entities.lock();
+                            for pp_entity in entities.to_vec() {
+                                let p_entity = pp_entity.clone();
+                                Entity::send_event(p_entity, EventThreadData::Event(event.clone()));
+                                
+                            }
                             
                         }
                         _ => {},
@@ -496,7 +544,6 @@ impl EntitySystem {
                 mutex.clear();
             }
             drop(recv);
-
             //let mut entities = this.entities.clone();
 
             // for p_entity in &*entities {
@@ -525,8 +572,9 @@ impl EntitySystem {
             // std::thread::sleep(std::time::Duration::from_millis(5));
         }
         println!("Closing Entity System thread!");
-
-        for p_entity in this.entities.to_vec() {
+        let mut this = p_this.lock();
+        let mut entities = this.p_entities.lock();
+        for p_entity in entities.to_vec() {
             let entity = p_entity.lock();
             let p_recv = entity.thread_reciever.clone();
             let mut recv = p_recv.lock();
@@ -534,13 +582,14 @@ impl EntitySystem {
             drop(recv);
             
         }
-        for handle in &this.entity_join_handles {
+        let entity_join_handles = this.entity_join_handles.lock();
+        for handle in entity_join_handles.as_slice() {
             while !handle.1.is_finished() {
                 std::thread::sleep(std::time::Duration::from_millis(1));
             }
         }
         std::thread::sleep(std::time::Duration::from_millis(50));
-        this.entities.clear();
+        entities.clear();
         std::thread::sleep(std::time::Duration::from_millis(100));
         0
     }
@@ -557,6 +606,12 @@ impl EntitySystem {
     //     };
     //     event
     // }
+
+    pub fn start(p_this: Arc<Mutex<Self>>) {
+        let mut this = p_this.lock();
+        println!("{}", "Starting Entity Thread!!".yellow());
+        this.ready = true;
+    }
 
     pub fn send_event(&mut self, event: Event) {
         let p_recv = self.thread_reciever.clone();
@@ -593,9 +648,10 @@ impl EntitySystem {
     }
 
     pub fn get_entity(&mut self, entity_id: EntityID) -> Option<EntityPtr> {
-        let p_ents = self.entities.clone();
+        let p_ents = self.p_entities.clone();
+        let ents = p_ents.lock();
         let mut entity = None;
-        for pp_ent in p_ents.to_vec() {
+        for pp_ent in ents.to_vec() {
             let p_ent = pp_ent.clone();
             let ent = p_ent.lock();
             if ent.entity_id == entity_id {

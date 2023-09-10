@@ -1,14 +1,14 @@
 #![cfg(feature = "opengl")]
 #![allow(unused)]
 
-use std::{sync::Arc, mem::{size_of_val, size_of}, f32::consts::PI};
+use std::{sync::Arc, mem::{size_of_val, size_of}, f32::consts::PI, fs::File};
 
 
 use colored::Colorize;
 use gl46::*;
 use sdl2::video::GLContext;
 use winit::dpi::Pixel;
-use crate::common::{vertex::*, *, materials::Shader, matrices::*, angles::QuatConstructor};
+use crate::common::{vertex::*, *, materials::Shader, matrices::*, angles::{QuatConstructor, Quat}};
 use parking_lot::*;
 use super::pipeline::Pipeline;
 
@@ -118,7 +118,7 @@ impl OGlRender for Pipeline {
                                     let texcoord = mesh_object.texture_coord.iter().find(|v| v.0 == i as i16).unwrap();
                                     buffer.push((vert.clone(), norm.1.clone(), texcoord.1.clone()));
                                 }
-                                DriverValues::create_buffer_vec_norm_tex(driver, &buffer, &mesh_object.faces);
+                                DriverValues::create_buffer_vec_norm_tex(driver, &buffer, &mesh_object.faces, camera.up, camera.forward);
                             }
                             else{
                                 let mut buffer = Vec::<(Vec3, Vec3)>::new();
@@ -127,7 +127,7 @@ impl OGlRender for Pipeline {
                                     let norm = mesh_object.normals.iter().find(|v| v.0 == i as i16).unwrap();
                                     buffer.push((vert.clone(), norm.1.clone()));
                                 }
-                                DriverValues::create_buffer_vec_norm(driver, &buffer, &mesh_object.faces);
+                                DriverValues::create_buffer_vec_norm(driver, &buffer, &mesh_object.faces, camera.up, camera.forward);
                             }
                         }
                         else {
@@ -138,14 +138,14 @@ impl OGlRender for Pipeline {
                                     let texcoord = mesh_object.texture_coord.iter().find(|v| v.0 == i as i16).unwrap();
                                     buffer.push((vert.clone(), texcoord.1.clone()));
                                 }
-                                DriverValues::create_buffer_vec_tex(driver, &buffer, &mesh_object.faces);
+                                DriverValues::create_buffer_vec_tex(driver, &buffer, &mesh_object.faces, camera.up, camera.forward);
                             }
                             else {
                                 let buffer = mesh_object.verts.clone();
-                                DriverValues::create_buffer_vec(driver, &buffer, &mesh_object.faces);
+                                DriverValues::create_buffer_vec(driver, &buffer, &mesh_object.faces, camera.up, camera.forward);
                             }
                         }
-
+                        
                         let shader_name = mesh_object.material.shader.shader_name.clone();
 
                         let sh = DriverValues::register_shader(driver, shader_name, mesh_object.material.shader.clone());
@@ -174,26 +174,77 @@ impl OGlRender for Pipeline {
                             
                             match nn {
 
+                                "_p" => {
+                                    // model view projection
+                                    
+                                    let right = camera.up.cross(camera.forward);
+                                    let mut p = camera.projection;
+                                    // p.x = camera.projection.x * right.x + camera.projection.y * right.y + camera.projection.z * right.z;
+                                    // p.y = camera.projection.x * camera.up.x + camera.projection.y * camera.up.y + camera.projection.z * camera.up.z;
+                                    // p.z = camera.projection.x * camera.forward.x + camera.projection.y * camera.forward.y + camera.projection.z * camera.forward.z;
+
+                                    // println!("{:?}", mvp.to_buffer());
+                                    gl.ProgramUniformMatrix4fv(shader_program, i, 1, GL_FALSE.0 as u8, p.to_buffer().as_ptr());
+                                },
                                 "_mvp" => {
                                     // model view projection
-                                    let mvp = camera.projection;
+
+                                    let right = camera.up.cross(camera.forward);
+                                    
+                                    let mut proj = camera.projection;
+                                    // proj.x = camera.projection.x * right.x + camera.projection.y * right.y + camera.projection.z * right.z;
+                                    // proj.y = camera.projection.x * camera.up.x + camera.projection.y * camera.up.y + camera.projection.z * camera.up.z;
+                                    // proj.z = camera.projection.x * camera.forward.x + camera.projection.y * camera.forward.y + camera.projection.z * camera.forward.z;
+
+                                    let mut mesh_mat = mesh.transform;
+                                    // mesh_mat.x = mesh.transform.x * right.x + mesh.transform.y * right.y + mesh.transform.z * right.z;
+                                    // mesh_mat.y = mesh.transform.x * camera.up.x + mesh.transform.y * camera.up.y + mesh.transform.z * camera.up.z;
+                                    // mesh_mat.z = mesh.transform.x * camera.forward.x + mesh.transform.y * camera.forward.y + mesh.transform.z * camera.forward.z;
+                                    
+                                    let mvp = proj * camera.transform * mesh_mat;
                                     // println!("{:?}", mvp.to_buffer());
                                     gl.ProgramUniformMatrix4fv(shader_program, i, 1, GL_FALSE.0 as u8, mvp.to_buffer().as_ptr());
                                 },
-                                "_mv" => {
+                                "_m" => {
                                     // model view
-                                    let mv = camera.transform * mesh.transform;
+                                    let right = camera.up.cross(camera.forward);
+                                    let mut m = mesh.transform;
+                                    
+                                    // m.x = mesh.transform.x * right.x + mesh.transform.y * right.y + mesh.transform.z * right.z;
+                                    // m.y = mesh.transform.x * camera.up.x + mesh.transform.y * camera.up.y + mesh.transform.z * camera.up.z;
+                                    // m.z = mesh.transform.x * camera.forward.x + mesh.transform.y * camera.forward.y + mesh.transform.z * camera.forward.z;
+                                    // println!("{}", m);
                                     // println!("{}", mv);
-                                    gl.ProgramUniformMatrix4fv(shader_program, i, 1, GL_FALSE.0 as u8, mv.to_buffer44().as_ptr());
+                                    gl.ProgramUniformMatrix4fv(shader_program, i, 1, GL_FALSE.0 as u8, m.to_buffer44().as_ptr());
+                                }
+                                "_v" => {
+                                    // model view
+                                    let v = camera.transform;
+                                    // println!("{}", v);
+                                    gl.ProgramUniformMatrix4fv(shader_program, i, 1, GL_FALSE.0 as u8, v.to_buffer44().as_ptr());
                                 }
                                 "_norm" => {
                                     // rotation of model view
-                                    let mv = camera.transform * mesh.transform;
+                                    let right = camera.up.cross(camera.forward);
+                                    
+                                    let mut m = mesh.transform;
+                                    // m.x = mesh.transform.x * right.x + mesh.transform.y * right.y + mesh.transform.x * right.z;
+                                    // m.y = mesh.transform.x * camera.up.x + mesh.transform.y * camera.up.y + mesh.transform.z * camera.up.z;
+                                    // m.z = mesh.transform.x * camera.forward.x + mesh.transform.y * camera.forward.y + mesh.transform.z * camera.forward.z;
+
+                                    let mv = camera.transform * m;
                                     let q = mv.get_rotation();
                                     let norm = q.to_mat33();
-                                    gl.ProgramUniformMatrix3fv(shader_program, i, 1, GL_TRUE.0 as u8, norm.to_buffer().as_ptr());
+                                    gl.ProgramUniformMatrix3fv(shader_program, i, 1, GL_FALSE.0 as u8, norm.to_buffer().as_ptr());
                                 }
-
+                                "nemissa" => {
+                                    let file = image::open(APP_DIR.to_owned() + "\\assets\\images\\nemissa_hitomi.png").unwrap();
+                                    let mut texture = 0;
+                                    gl.GenTextures(1, &mut texture);
+                                    gl.BindTexture(GL_TEXTURE_2D, texture);
+                                    gl.TexImage2D(GL_TEXTURE_2D, 0, GL_RGB.0 as i32, file.width() as i32, file.height() as i32, 0, GL_RGB, GL_UNSIGNED_BYTE, file.as_bytes().as_ptr().cast());
+                                    
+                                }
                                 _ => {
                                     // try to get value similar to it in the shader uniforms!!
                                     let uniform = mesh_object.material.shader_descriptor.iter().find(|v| v.0.eq(nn)).expect(("Failed to find uniform. Maybe something went wrong in the Material creation process?? uniform:".to_owned() + format!("{nn}").as_str()).as_str());
@@ -271,9 +322,10 @@ impl OGlRender for Pipeline {
                         // gl.DrawArrays(GL_TRIANGLES, 0, mesh_object.verts.len() as i32);
                         gl.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, elem_buffer);
                         gl.DrawElements(GL_TRIANGLES, (mesh_object.faces.len() * 3) as i32, GL_UNSIGNED_INT, 0 as *const _);
-
-                        
-                        
+                        // let mut size = 0;
+                        // gl.GetBufferParameteriv(GL_ARRAY_BUFFER, GL_BUFFER_SIZE, &mut size);
+                        // let data = std::slice::from_raw_parts_mut(gl.MapBuffer(GL_ARRAY_BUFFER, GL_READ_ONLY).cast::<f32>(), size as usize);
+                        // println!("{:?}", data);
                         gl.DetachShader(shader_program, *vertex_shader);
                         gl.DetachShader(shader_program, *fragment_shader);
 
@@ -408,20 +460,29 @@ impl DriverValues {
         PipelineValues {  }
     }
 
-    pub unsafe fn create_buffer_vec_norm_tex(this: &mut Self, vertices: &Vec<(Vec3, Vec3, (f32, f32))>, indices: &Vec<(i16, i16, i16)>) {
+    pub unsafe fn create_buffer_vec_norm_tex(this: &mut Self, vertices: &Vec<(Vec3, Vec3, (f32, f32))>, indices: &Vec<(i16, i16, i16)>, up: Vec3, forward: Vec3) {
         let gl = this.gl.as_ref().unwrap();
 
         gl.BindVertexArray(this.vao);
-
+        let right = up.cross(forward);
 
         gl.BindBuffer(GL_ARRAY_BUFFER, this.vbo);
         let temp = vertices.iter().map(|f| {
             let v = f.0.to_buffer();
             let n = f.1.to_buffer();
-            [v[0], v[1], v[2], n[0], n[1], n[2], f.2.0, f.2.1]
+            [
+                v[0] * right.x + v[1] * right.y + v[2] * right.z, 
+                v[0] * up.x + v[1] * up.y + v[2] * up.z, 
+                v[0] * forward.x + v[1] * forward.y + v[2] * forward.z, 
+                n[0], 
+                n[1], 
+                n[2], 
+                f.2.0, 
+                f.2.1
+                ]
         }).collect::<Vec<[f32; 8]>>();
         let verts = temp.as_slice();
-
+        
         gl.BufferData(GL_ARRAY_BUFFER, size_of_val(verts) as isize, verts.as_ptr().cast(), GL_STATIC_DRAW);
         gl.VertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE.0 as u8, 8 * size_of::<f32>() as i32, 0 as *const _);
         gl.EnableVertexAttribArray(0);
@@ -440,18 +501,25 @@ impl DriverValues {
         
     }
 
-    pub unsafe fn create_buffer_vec_norm(this: &mut Self, vertices: &Vec<(Vec3, Vec3)>, indices: &Vec<(i16, i16, i16)>) {
+    pub unsafe fn create_buffer_vec_norm(this: &mut Self, vertices: &Vec<(Vec3, Vec3)>, indices: &Vec<(i16, i16, i16)>, up: Vec3, forward: Vec3) {
         let gl = this.gl.as_ref().unwrap();
 
         gl.BindVertexArray(this.vao);
 
-
+        let right = up.cross(forward);
 
         gl.BindBuffer(GL_ARRAY_BUFFER, this.vbo);
         let temp = vertices.iter().map(|f| {
             let v = f.0.to_buffer();
             let n = f.1.to_buffer();
-            [v[0], v[1], v[2], n[0], n[1], n[2]]
+            [
+                v[0] * right.x + v[1] * right.y + v[2] * right.z, 
+                v[0] * up.x + v[1] * up.y + v[2] * up.z, 
+                v[0] * forward.x + v[1] * forward.y + v[2] * forward.z, 
+                n[0], 
+                n[1], 
+                n[2]
+                ]
         }).collect::<Vec<[f32; 6]>>();
         let verts = temp.as_slice();
 
@@ -470,17 +538,23 @@ impl DriverValues {
 
     }
 
-    pub unsafe fn create_buffer_vec_tex(this: &mut Self, vertices: &Vec<(Vec3, (f32, f32))>, indices: &Vec<(i16, i16, i16)>) {
+    pub unsafe fn create_buffer_vec_tex(this: &mut Self, vertices: &Vec<(Vec3, (f32, f32))>, indices: &Vec<(i16, i16, i16)>, up: Vec3, forward: Vec3) {
         let gl = this.gl.as_ref().unwrap();
 
 
         gl.BindVertexArray(this.vao);
-
+        let right = up.cross(forward);
 
         gl.BindBuffer(GL_ARRAY_BUFFER, this.vbo);
         let temp = vertices.iter().map(|f| {
             let v = f.0.to_buffer();
-            [v[0], v[1], v[2], f.1.0, f.1.1]
+            [
+                v[0] * right.x + v[1] * right.y + v[2] * right.z, 
+                v[0] * up.x + v[1] * up.y + v[2] * up.z, 
+                v[0] * forward.x + v[1] * forward.y + v[2] * forward.z,  
+                f.1.0, 
+                f.1.1
+            ]
         }).collect::<Vec<[f32; 5]>>();
         let verts = temp.as_slice();
 
@@ -498,18 +572,22 @@ impl DriverValues {
         
     }
 
-    pub unsafe fn create_buffer_vec(this: &mut Self, vertices: &Vec<Vec3>, indices: &Vec<(i16, i16, i16)>) {
+    pub unsafe fn create_buffer_vec(this: &mut Self, vertices: &Vec<Vec3>, indices: &Vec<(i16, i16, i16)>, up: Vec3, forward: Vec3) {
         let gl = this.gl.as_ref().unwrap();
 
 
         gl.BindVertexArray(this.vao);
-
+        let right = up.cross(forward);
 
 
         gl.BindBuffer(GL_ARRAY_BUFFER, this.vbo);
         let temp = vertices.iter().map(|f| {
             let v = f.to_buffer();
-            [v[0], v[1], v[2]]
+            [
+                v[0] * right.x + v[1] * right.y + v[2] * right.z, 
+                v[0] * up.x + v[1] * up.y + v[2] * up.z, 
+                v[0] * forward.x + v[1] * forward.y + v[2] * forward.z, 
+            ]
         }).collect::<Vec<[f32; 3]>>();
         let verts = temp.as_slice();
 

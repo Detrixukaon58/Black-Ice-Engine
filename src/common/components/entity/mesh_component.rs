@@ -5,7 +5,7 @@ use std::any::Any;
 use std::sync::Arc;
 use parking_lot::*;
 
-use crate::common::{mesh::*, engine::gamesys::*, vertex::*, angles::Quat, components::{component_system::*, entity::entity_system::{entity_event::*, *}}, transform::Transform, matrices::{Matrix34, M34}};
+use crate::common::{mesh::*, engine::gamesys::*, vertex::*, angles::*, components::{component_system::*, entity::entity_system::{entity_event::*, *}}, transform::Transform, matrices::*};
 use crate::common::engine::pipeline::*;
 use colored::*;
 // This is a type of pointer that is assigned by the game engine. This means that it must be of trait Reflection
@@ -32,12 +32,17 @@ impl BaseComponent for MeshComponent {
         match event.event_flag {
             EventFlag::INIT => {
                 self.update_mesh();
+                // self.transform.set_rotation(Quat::euler(Ang3::new(0.0, 90.0, 0.0)));
+                // self.transform.translate(Vec3::new(0.0, 0.0 , 0.0));
             }
             EventFlag::UPDATE => {
                 let mut mesh = self.mesh.lock();
-                self.transform.rotate(Quat::euler(1.0, 0.0, 0.0));
-                mesh.transform = self.transform.get_world_tm() * self.p_entity.get_world_tm();
-                std::thread::sleep(std::time::Duration::from_millis(1));
+                // self.transform.rotate(Quat::euler(Ang3::new(1.0, 0.0, 0.0)));
+                //self.transform.translate(Vec3::new(0.0, 0.0 , -0.001));
+                // println!("{}", self.transform.get_tm() * Vec4::new(100.0, 100.0, 0.0, 1.0));
+                // println!("{}", self.transform.rotation);
+                // println!("{}", self.transform.get_world_tm());
+                mesh.transform = self.transform.get_tm();
                 drop(mesh);
             }
             EventFlag::RESPAWN => {
@@ -87,7 +92,7 @@ impl Constructor<MeshComponent> for MeshComponent {
                 )),
                 Value::Component("layer".to_string(), std::sync::Arc::new(Value::I32(0))),
                 Value::Component("position".to_string(), std::sync::Arc::new(Value::Vec3(Vec3::new(0.0, 0.0, 0.0)))),
-                Value::Component("rotation".to_string(), std::sync::Arc::new(Value::Quat(Quat::euler(0.0, 0.0, 0.0)))),
+                Value::Component("rotation".to_string(), std::sync::Arc::new(Value::Quat(Quat::euler(Ang3::new(0.0, 0.0, 0.0))))),
                 Value::Component("scale".to_string(), std::sync::Arc::new(Value::Vec3(Vec3::new(1.0, 1.0, 1.0))))
                 ]
             )
@@ -122,5 +127,9 @@ impl MeshComponent {
     pub fn rotate(&mut self, rotation: Quat)
     {
         self.transform.rotate(rotation);
+    }
+
+    pub fn translate(&mut self, translation: Vec3) {
+        self.transform.translate(translation);
     }
 }

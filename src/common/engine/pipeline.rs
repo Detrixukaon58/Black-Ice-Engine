@@ -12,7 +12,7 @@ use std::future::*;
 use sdl2::*;
 use async_trait::*;
 use winit::dpi::Pixel;
-
+use colored::*;
 
 extern crate raw_window_handle;
 
@@ -63,13 +63,23 @@ pub struct Camera {
     pub projection: MatrixProjection,
     pub transform: Matrix34,
     pub render_texture: Option<RenderTexture>,
+    pub up: Vec3,
+    pub forward: Vec3,
     is_active: bool,
 }
 
 impl Camera {
     
     pub fn new(id: i32) -> Self {
-        Self { cam_id: id, projection: MatrixProjection::new(), transform: Matrix34::identity(), render_texture: None, is_active: false }
+        Self { 
+            cam_id: id, 
+            projection: MatrixProjection::new(), 
+            transform: Matrix34::identity(), 
+            render_texture: None, 
+            is_active: false, 
+            up: Vec3::new(0.0, 0.0, 1.0), 
+            forward:Vec3::new(1.0, 0.0, 0.0) 
+        }
     }
 
 }
@@ -85,7 +95,8 @@ pub struct RenderPipelineSystem {
     thread_reciever: Arc<Mutex<Vec<ThreadData>>>,
     driver_vals: Arc<Mutex<Option<DriverValues>>>,
     cameras: Vec<Arc<Mutex<Camera>>>,
-    active_camera: i32
+    active_camera: i32,
+    ready: bool
 
 }
 
@@ -142,12 +153,13 @@ impl RenderPipelineSystem{
 
     }
 
-    pub fn update_camera(&mut self, id: i32, projection: &MatrixProjection, transform: &Matrix34) {
+    pub fn update_camera(&mut self, id: i32, projection: &MatrixProjection, transform: &Matrix34, up: Vec3, forward: Vec3) {
         let p_cam = self.cameras.iter().find(|v| {let vv = v.lock(); vv.cam_id == id}).clone().expect("No such registered camera!!");
         let mut cam = p_cam.lock();
         cam.projection = projection.clone();
         cam.transform = transform.clone();
-        
+        cam.up = up;
+        cam.forward = forward;
     }
 
     pub fn camera_set_active(&mut self, id: i32) {
@@ -188,13 +200,24 @@ impl RenderPipelineSystem{
             thread_reciever: Arc::new(Mutex::new(Vec::new())),
             driver_vals: crate::common::components::component_system::ComponentRef_new(Some(DriverValues::default())),
             cameras: Vec::new(),
-            active_camera: 0
+            active_camera: 0,
+            ready: false
         };
         return pip_sys;
     }
 
     pub fn processing<'a>(p_this: Arc<RwLock<Self>>) -> i32{
         unsafe{
+            loop {
+                let this = p_this.read();
+                let ready = this.ready.clone();
+                drop(this);
+                if ready {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            println!("{}", p_this.is_locked());
             let this = p_this.write();
             // Initialise pipeline stuff
             #[cfg(feature = "vulkan")]DriverValues::init_vulkan(this.driver_vals.lock().as_mut().unwrap());
@@ -207,8 +230,9 @@ impl RenderPipelineSystem{
 
             // first we setup threads for each layer
             //let mut threads: Box<Dict<usize, Arc<Mutex<Threader>>>> = Box::new(Dict::<usize, Arc<Mutex<Threader>>>::new());
-            
             drop(this);
+            println!("{}", p_this.is_locked());
+
             while !Game::isExit() {
                 let this = match p_this.try_read() {
                     Some(v) => v,
@@ -280,6 +304,14 @@ impl RenderPipelineSystem{
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
         0
+    }
+
+    pub fn start(p_this: Arc<RwLock<Self>>) {
+        let mut this = p_this.write();
+        println!("{}", "Starting Render Thread!!".yellow());
+        this.ready = true;
+        drop(this);
+        println!("{}", p_this.is_locked());
     }
 
     pub fn is_alive(this: &mut Self) -> bool {

@@ -63,10 +63,10 @@ pub struct Matrix34 {
 
 impl Display for Matrix34 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "Mat34(({xx},{xy},{xz}),({yx},{yy},{yz}),({zx},{zy},{zz}))",
-            xx = self.x.x, xy = self.x.y, xz = self.x.z,
-            yx = self.y.x, yy = self.y.y, yz = self.y.z,
-            zx = self.z.x, zy = self.z.y, zz = self.z.z
+        writeln!(f, "Mat34(({xx},{xy},{xz},{xw})\n,({yx},{yy},{yz},{yw})\n,({zx},{zy},{zz},{zw}))",
+            xx = self.x.x, xy = self.x.y, xz = self.x.z, xw = self.x.w,
+            yx = self.y.x, yy = self.y.y, yz = self.y.z, yw = self.y.w,
+            zx = self.z.x, zy = self.z.y, zz = self.z.z, zw = self.z.w
         )
     }
 }
@@ -153,21 +153,21 @@ impl QuatToMat33 for Quat {
     fn to_mat33(&self) -> Matrix33 {
         let s = ((self.x.powi(2) + self.y.powi(2) + self.z.powi(2) + self.w.powi(2)).sqrt()).powi(-2);
         let x = Vec3::new(
-            1.0 - 2.0 * s * (self.y.powi(2) - self.x.powi(2)),
+            1.0 - 2.0 * s * (self.y.powi(2) + self.z.powi(2)),
             2.0 * s * (self.x * self.y - self.z * self.w),
             2.0 * s * (self.x * self.z + self.y * self.w)
         );
         
         let y = Vec3::new(
             2.0 * s * (self.x * self.y + self.z * self.w),
-            1.0 - 2.0 * s * (self.x.powi(2) - self.z.powi(2)),
+            1.0 - 2.0 * s * (self.x.powi(2) + self.z.powi(2)),
             2.0 * s * (self.y * self.z - self.x * self.w)
         );
 
         let z = Vec3::new(
             2.0 * s * (self.x * self.z - self.y * self.w),
             2.0 * s * (self.y * self.z + self.x * self.w),
-            1.0 - 2.0 * s * (self.x.powi(2) - self.y.powi(2))
+            1.0 - 2.0 * s * (self.x.powi(2) + self.y.powi(2))
         );
         
         return Matrix33 { x: x, y: y, z: z };
@@ -323,6 +323,10 @@ impl M34Buffer for Matrix34 {
         self.y.x, self.y.y, self.y.z, self.y.w,
         self.z.x, self.z.y, self.z.z, self.z.w,
         0.0, 0.0, 0.0, 1.0];
+        // [self.x.x, self.y.x, self.z.x, 0.0,
+        // self.x.y, self.y.y, self.z.y, 0.0,
+        // self.x.z, self.y.z, self.z.z, 0.0,
+        // self.x.w, self.y.w, self.z.w, 0.1]
     }
 }
 
@@ -340,14 +344,48 @@ impl MatrixProjection {
         self.y.x, self.y.y, self.y.z, self.y.w,
         self.z.x, self.z.y, self.z.z, self.z.w,
         self.w.x, self.w.y, self.w.z, self.w.w]
+        // [self.x.x, self.y.x, self.z.x, self.w.x,
+        // self.x.y, self.y.y, self.z.y, self.w.y,
+        // self.x.z, self.y.z, self.z.z, self.w.z,
+        // self.x.w, self.y.w, self.z.w, self.w.w]
+    }
+    pub fn transpose(&mut self) {
+        let x = self.x;
+        let y = self.y;
+        let z = self.z;
+        let w = self.w;
+        self.x = Vec4::new(
+            x.x, y.x, z.x, w.x
+        );
+        self.y = Vec4::new(
+            x.y, y.y, z.y, w.y
+        );
+        self.z = Vec4::new(
+            x.z, y.z, z.z, w.z
+        );
+        self.w = Vec4::new(
+            x.w, y.w, z.w, w.w
+        );
     }
 
     pub fn ortho_projection(&mut self, l:f32, r:f32, t:f32, b:f32, n:f32, f:f32) {
         
-        use cgmath::prelude::*;
+        // use cgmath::prelude::*;
 
-        let ortho = cgmath::Ortho {left:l, right:r, top:t, bottom:b, near:n, far:f};
-        let matt: cgmath::Matrix4<f32> = ortho.into();
+        // let mat = cgmath::ortho(l, r, b, t, n, f);
+        
+        // self.x = Vec4::new(
+        //     mat.x.x, mat.y.x, mat.z.x, mat.w.x
+        // );
+        // self.y = Vec4::new(
+        //     mat.x.y, mat.y.y, mat.z.y, mat.w.y
+        // );
+        // self.z = Vec4::new(
+        //     mat.x.z, mat.y.z, mat.z.z, mat.w.z
+        // );
+        // self.w = Vec4::new(
+        //     mat.x.w, mat.y.w, mat.z.w, mat.w.w
+        // );
         
         let mid_x = (r + l)/ (r - l);
         let mid_y = (t + b)/ (t - b);
@@ -371,28 +409,57 @@ impl MatrixProjection {
         );
     }
 
-    pub fn perpective_projection(&mut self, l:f32, r:f32, t:f32, b:f32, n:f32, f:f32) {
+    pub fn perpective_projection(&mut self, ratio: f32, view_angle: f32, far: f32, near: f32) {
+        fn frustrum(l:f32, r:f32, t:f32, b:f32, n:f32, f:f32) -> MatrixProjection {
+            let mid_x = n * (r + l) / (r - l);
+            let mid_y = n * (t + b) / (t - b);
+            let mid_z = (f + n) / (f - n);
+            let mut mat = MatrixProjection::identity();
+            let scale_x = 2.0 * n / (r - l);
+            let scale_y = 2.0 * n / (t - b);
+            let scale_z = 2.0 * f * n / (n - f);
 
-        let mid_x = (r + l)/ (r - l);
-        let mid_y = (t + b)/ (t - b);
-        let mid_z = (f + n) / (f - n);
+            mat.x = Vec4::new(
+                -scale_x, 0.0, 0.0, -mid_x
+            );
+            mat.y = Vec4::new(
+                0.0, scale_y, 0.0, -mid_y
+            );
+            mat.z = Vec4::new(
+                0.0, 0.0, scale_z, -mid_z
+            );
+            mat.w = Vec4::new(
+                0.0, 0.0, -1.0, 0.0
+            );
+            mat
+        }
+        let t = near * (view_angle.to_radians()/2.0).tan();
+        let b = -t.clone();
+        let r = t.clone() * ratio;
+        let l = -r.clone();
+        let mat = frustrum(l, r, t, b, near, far);
+        self.x = mat.x;
+        self.y = mat.y;
+        self.z = mat.z;
+        self.w = mat.w;
 
-        let scale_x = 2.0 * n / (r - l);
-        let scale_y = 2.0 * n / (t - b);
-        let scale_z = -(2.0 * f * n)/(f - n);
+        // let mat = cgmath::perspective(cgmath::Deg(view_angle), ratio, near, far);
+        // // println!("{:?}", mat2);
+        // self.x = Vec4::new(
+        //     mat.x.x, mat.y.x, mat.z.x, mat.w.x
+        // );
+        // self.y = Vec4::new(
+        //     mat.x.y, mat.y.y, mat.z.y, mat.w.y
+        // );
+        // self.z = Vec4::new(
+        //     mat.x.z, mat.y.z, mat.z.z, mat.w.z
+        // );
+        // self.w = Vec4::new(
+        //     mat.x.w, mat.y.w, mat.z.w, mat.w.w
+        // );
 
-        self.x = Vec4::new(
-            scale_x, 0.0, mid_x, 0.0
-        );
-        self.y = Vec4::new(
-            0.0, scale_y, mid_y, 0.0
-        );
-        self.z = Vec4::new(
-            0.0, 0.0, -mid_z, -1.0
-        );
-        self.w = Vec4::new(
-            0.0, 0.0, scale_z, 0.0
-        );
+        // *self = *self * Quat::axis_angle(Vec3::new(0.0, 1.0, 0.0).cross(Vec3::new(0.0, 0.0, 1.0)), Vec3::new(0.0, 1.0, 0.0).angle_to(Vec3::new(0.0, 0.0, 1.0))).to_mat33().to_mat34();
+        
     }
 
     pub fn new() -> Self {
@@ -507,5 +574,84 @@ impl Matrix34 {
 
     pub fn identity() -> Self {
         Self { x: Vec4::new(1, 0, 0, 0), y: Vec4::new(0, 1, 0, 0), z: Vec4::new(0, 0, 1, 0,) }
+    }
+}
+
+impl std::ops::Mul<Vec3> for Matrix33 {
+    type Output = Vec3;
+    fn mul(self, rhs: Vec3) -> Self::Output {
+        Vec3::new(
+            self.x.x * rhs.x + self.x.y * rhs.y + self.x.z * rhs.z,
+            self.y.x * rhs.x + self.y.y * rhs.y + self.y.z * rhs.z,
+            self.z.x * rhs.x + self.z.y * rhs.y + self.z.z * rhs.z
+        )
+    }
+}
+
+impl std::ops::Mul<Vec3> for Matrix34 {
+    type Output = Vec3;
+    fn mul(self, rhs: Vec3) -> Self::Output {
+        Vec3::new(
+            self.x.x * rhs.x + self.x.y * rhs.y + self.x.z * rhs.z + self.x.w,
+            self.y.x * rhs.x + self.y.y * rhs.y + self.y.z * rhs.z + self.y.w,
+            self.z.x * rhs.x + self.z.y * rhs.y + self.z.z * rhs.z + self.z.w
+        )
+    }
+}
+
+impl ops::Mul<f32> for Vec4{
+    type Output = Vec4;
+    fn mul(self, rhs: f32) -> Vec4 {
+        let mut this = self;
+        this.x *= rhs;
+        this.y *= rhs;
+        this.z *= rhs;
+        this.w *= rhs;
+        this
+    }
+}
+
+impl ops::Add for Vec4 {
+    type Output = Vec4;
+    fn add(self, rhs: Self) -> Self::Output {
+        let mut this = self;
+        this.x += rhs.x;
+        this.y += rhs.y;
+        this.z += rhs.x;
+        this.w += rhs.w;
+        this
+    }
+}
+
+impl ops::Neg for Vec4 {
+    type Output = Vec4;
+    fn neg(self) -> Self::Output {
+        let mut this = self;
+        this.x = -this.x;
+        this.y = -this.y;
+        this.z = -this.z;
+        this.w = -this.w;
+        this
+    }
+}
+
+impl ops::Sub for Vec4 {
+    type Output = Vec4;
+    fn sub(self, rhs: Self) -> Self::Output {
+        let mut this = self;
+        this.x -= rhs.x;
+        this.y -= rhs.y;
+        this.z -= rhs.z;
+        this.w -= rhs.w;
+        this
+    }
+}
+
+impl ops::AddAssign for Vec4 {
+    fn add_assign(&mut self, rhs: Self) {
+        self.x += rhs.x;
+        self.y += rhs.y;
+        self.z += rhs.z;
+        self.w += rhs.w;
     }
 }

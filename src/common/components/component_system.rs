@@ -1,7 +1,7 @@
 // TODO: Implement a component registration system to allow for component allocation for entities
 #![allow(unused)]
 #![allow(non_snake_case)]
-use std::{sync::Arc, fmt::{Display, Pointer}};
+use std::{sync::Arc, fmt::{Display, Pointer}, collections::HashMap};
 
 use crate::common::{engine::gamesys::*, components::entity::*, vertex::*, matrices::*};
 
@@ -38,6 +38,38 @@ pub enum Value {
     Array(Vec<Value>),
     Component(String, Arc<Value>),
     
+}
+
+pub struct DataPtr {
+    inner: *mut dyn std::any::Any,
+    data_type: std::any::TypeId,
+    description: String,
+    name: String,
+}
+
+unsafe impl Send for DataPtr {}
+unsafe impl Sync for DataPtr {}
+
+pub struct ComponentPtr {
+    inner: Box<ReflectionValue>,
+    data_type: std::any::TypeId,
+    description: String,
+    name: String
+}
+
+pub enum ReflectionValue {
+    Null,
+    Data(DataPtr),
+    Component(ComponentPtr),
+    Array(Vec<ReflectionValue>)
+}
+
+pub struct ReflectionValueBuilder {
+    inner: ReflectionValue,
+}
+
+impl ReflectionValueBuilder {
+
 }
 
 impl Display for Value {
@@ -579,7 +611,8 @@ pub type ConstructorDefinition = Arc<Value>;
 pub trait Constructor<T> where T: Base {
     unsafe fn construct(entity: EntityPtr, definition: &ConstructorDefinition) -> Option<ComponentRef<T>>;
     fn default_constuctor_definition() -> ConstructorDefinition;
-
+    fn reflector(&mut self, f: &mut ReflectionValue) { }
+    // fn register_type(&mut self) -> T {}
 }
 
 pub trait BaseComponent: Reflection + Send{

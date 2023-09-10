@@ -22,7 +22,11 @@ impl Display for Ang3 {
 impl Ang3 {
 
     pub fn new(y: f32, p: f32, r:f32) -> Ang3 {
-        Ang3 { y: y, p: p, r: r }
+        Ang3 { 
+            y: y % 360.0, 
+            p: p % 360.0, 
+            r: r % 360.0
+        }
     }
 }
 
@@ -69,9 +73,11 @@ impl Display for Quat {
 impl Quat {
 
     /// ypr as degrees!!
-    pub fn euler(y: f32, p: f32, r: f32) -> Self
+    pub fn euler(ang: Ang3) -> Self
     {
-        let deg_to_rad = std::f32::consts::PI / 180.0;
+        let y = ang.y;
+        let p = ang.p;
+        let r = ang.r;
         // let cr = (r * deg_to_rad * 0.5).cos();
         // let sr = (r * deg_to_rad * 0.5).sin();
         // let cp = (p * deg_to_rad * 0.5).cos();
@@ -85,14 +91,14 @@ impl Quat {
         //     w: cr * cp * sy - sr * sp * cy 
         // }
 
-        let _x = Quat::axis_angle(Vec3::new(1.0, 0.0, 0.0), y * deg_to_rad);
-        let _y = Quat::axis_angle(Vec3::new(0.0, 1.0, 0.0), p * deg_to_rad);
-        let _z = Quat::axis_angle(Vec3::new(0.0, 0.0, 1.0), r * deg_to_rad);
+        let _x = Quat::axis_angle(Vec3::new(0.0, 0.0, 1.0), y.to_radians());
+        let _y = Quat::axis_angle(Vec3::new(0.0, 1.0, 0.0), p.to_radians());
+        let _z = Quat::axis_angle(Vec3::new(1.0, 0.0, 0.0), r.to_radians());
 
         
         let tmp = _x * _y * _z;
 
-        // println!("{}", tmp);
+        // println!("{}", tmp.to_euler());
         tmp
     }
 
@@ -107,8 +113,8 @@ impl Quat {
     pub fn mult(&mut self, rhs: Self){
         
         self.x = self.w * rhs.x + self.x * rhs.w + self.y * rhs.z - self.z * rhs.y;
-        self.y = self.w * rhs.y + self.y * rhs.w + self.x * rhs.z - self.z * rhs.x;
-        self.z = self.w * rhs.z + self.z * rhs.w + self.x * rhs.y - self.y * rhs.x;
+        self.y = self.w * rhs.y - self.x * rhs.z + self.y * rhs.w + self.z * rhs.x;
+        self.z = self.w * rhs.z + self.x * rhs.y - self.y * rhs.x + self.z * rhs.w;
         self.w = self.w * rhs.w - self.x * rhs.x - self.y * rhs.y - self.z * rhs.z;
     
     }
@@ -122,16 +128,25 @@ impl Quat {
     pub fn to_euler(&self) -> Ang3 {
         Ang3 {
             y: (
-                (2.0 * (self.w * self.x + self.y * self.z)) / (1.0 - 2.0 *(self.x.powi(2) + self.y.powi(2)))
-            ).atan(),
-            p: -( PI / 2.0) + 2.0 * (
-                (
-                    (1.0 + 2.0 * (self.w * self.y - self.x * self.z)) / (1.0 - 2.0 * (self.w*self.y - self.x * self.z))
-                ).sqrt()
-            ).atan(),
+                (2.0 * (self.w * self.z + self.y * self.x)) / (1.0 - 2.0 *(self.z.powi(2) + self.y.powi(2)))
+            ).atan().to_degrees(),
+            p: ( 
+                {
+                    let v = 2.0 * (self.w * self.y - self.z * self.x);
+                    if v > 1.0 {
+                        1.0
+                    }
+                    else if v < -1.0 {
+                        -1.0
+                    }
+                    else {
+                        v
+                    }
+                }
+            ).asin().to_degrees(),
             r: (
-                (2.0 * (self.w*self.z + self.x * self.y)) / (1.0 - 2.0 * (self.y.powi(2) + self.z.powi(2)))
-            ).atan()
+                (2.0 * (self.w * self.x + self.z * self.y)) / (1.0 - 2.0 * (self.y.powi(2) + self.x.powi(2)))
+            ).atan().to_degrees()
         }
     }
 
@@ -155,5 +170,13 @@ impl std::ops::Mul for Quat {
 impl std::ops::MulAssign for Quat {
     fn mul_assign(&mut self, rhs: Self) {
         self.mult(rhs);
+    }
+}
+
+impl std::ops::Mul<Vec3> for Quat {
+    type Output = Vec3;
+    fn mul(self, rhs: Vec3) -> Self::Output {
+        use super::matrices::*;
+        self.to_mat33() * rhs
     }
 }

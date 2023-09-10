@@ -41,7 +41,7 @@ impl Mesh {
         mesh_object.define_normal(2, Vec3::new(0.0, 0.0, 1.0));
 
         mesh_object.define_uv(0, (0.0, 0.0));
-        mesh_object.define_uv(0, (0.5, 0.5));
+        mesh_object.define_uv(1, (0.5, 0.5));
         mesh_object.define_uv(2, (1.0, 0.0));
 
         self.meshes.push(Arc::new(Mutex::new(mesh_object)));
@@ -49,25 +49,25 @@ impl Mesh {
 
     pub fn square(&mut self) {
         let mut mesh_object = MeshObject::new("square".to_string());
-        
-        mesh_object.define_point(Vec3::new(-25.0, -25.0, 0.0));
-        mesh_object.define_point(Vec3::new(25.0, -25.0, 0.0));
-        mesh_object.define_point(Vec3::new(25.0, 25.0, 0.0));
+        let v = 100.0;
+        mesh_object.define_point(Vec3::new(-v, -v, 0.0));
+        mesh_object.define_point(Vec3::new(v, -v, 0.0));
+        mesh_object.define_point(Vec3::new(v, v, 0.0));
 
         mesh_object.define_face(0, 1, 2);
         mesh_object.define_normal(0, Vec3::new(0.0, 0.0, 1.0));
         mesh_object.define_normal(1, Vec3::new(0.0, 0.0, 1.0));
         mesh_object.define_normal(2, Vec3::new(0.0, 0.0, 1.0));
 
-        mesh_object.define_point(Vec3::new(-25.0, 25.0, 0.0));
+        mesh_object.define_point(Vec3::new(-v, v, 0.0));
 
         mesh_object.define_face(2, 3, 0);
         mesh_object.define_normal(3, Vec3::new(0.0, 0.0, 1.0));
 
         mesh_object.define_uv(0, (0.0, 0.0));
-        mesh_object.define_uv(1, (0.5, 0.5));
-        mesh_object.define_uv(2, (1.0, 0.0));
-        mesh_object.define_uv(3, (1.0, 0.0));
+        mesh_object.define_uv(1, (1.0, 0.0));
+        mesh_object.define_uv(2, (1.0, 1.0));
+        mesh_object.define_uv(3, (0.0, 1.0));
 
         self.meshes.push(Arc::new(Mutex::new(mesh_object)));
     }

@@ -8,7 +8,6 @@ use serde::*;
 
 pub struct Image {
     image_file: filesystem::files::AssetPath,
-    count: std::time::SystemTime,
     p_Entity: EntityPtr
 }
 
@@ -40,9 +39,6 @@ impl BaseComponent for Image {
 
             },
             entity_event::EventFlag::UPDATE => {
-                println!("{}", std::time::SystemTime::now().duration_since(self.count).unwrap().as_millis());
-                self.count = std::time::SystemTime::now();
-
                 //self.draw();
             }
             entity_event::EventFlag::RESPAWN => {
@@ -65,7 +61,6 @@ impl Constructor<Image> for Image {
         println!("{}", path);
         Some(ComponentRef_new(Self {
             image_file: AssetPath::new(path.clone()),
-            count: std::time::SystemTime::now(),
             p_Entity: entity.clone()
         }))
 

@@ -21,7 +21,7 @@ impl Default for Transform {
     fn default() -> Self {
         Self{
             position: Vec3::new(0.0, 0.0, 0.0),
-            rotation: Quat::euler(0.0, 0.0, 0.0),
+            rotation: Quat::euler(Ang3::new(0.0, 0.0, 0.0)),
             scale: Vec3::new(1.0, 1.0, 1.0),
             world_matrix: Matrix34::identity(),
             parent_transform: None,
@@ -89,8 +89,27 @@ impl Transform {
     }
 
     pub fn get_world_tm(&self) -> Matrix34 {
+        let mut result = self.world_matrix.clone();
+        let mut p_parent = self.parent_transform.clone();
+        while let Some(ref parent) = p_parent {
+            result = result * parent.get_tm();
+            p_parent = parent.parent_transform.clone();
+        }
+        result
+    }
+
+    pub fn get_tm(&self) -> Matrix34 {
         self.world_matrix.clone()
     }
+
+    pub fn set_tm(&mut self, tm: Matrix34) {
+        let rotation = tm.get_rotation();
+        let scale = tm.get_scale();
+        let position = tm.get_translation();
+        self.set_rotation(rotation);
+        self.set_position(position);
+        self.set_scale(scale);
+    } 
 
     pub fn get_global_position(&self) -> Vec3 {
         if let Some(t) = self.parent_transform.as_ref() {

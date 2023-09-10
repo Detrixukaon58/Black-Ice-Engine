@@ -39,6 +39,7 @@ bitmask-enum = { version = "*"}
 colored = { version = "*"}
 cgmath = {version = "*"}
 parking_lot = {version = "*"}
+image = {version = "*"}
 
 [features]
 vulkan = ["dep:ash", "dep:ash-window", "sdl2/raw-window-handle"]

@@ -213,6 +213,14 @@ impl ops::Mul<Vec3> for Vec3{
     }
 }
 
+impl ops::Mul<f32> for Vec3 {
+    type Output = Vec3;
+    fn mul(self, rhs: f32) -> Self::Output {
+        self.scale(rhs);
+        self
+    }
+}
+
 impl ops::MulAssign for Vec3 {
     fn mul_assign(&mut self, rhs: Self) {
         self.x /= rhs.x;
@@ -221,14 +229,23 @@ impl ops::MulAssign for Vec3 {
     }
 }
 
-
+impl std::ops::Neg for Vec3 {
+    type Output = Self;
+    fn neg(self) -> Self::Output {
+        let mut v = self;
+        v.x = -v.x;
+        v.y = -v.y;
+        v.z = -v.z;
+        v
+    }
+}
 pub trait Vec3Buffer {
     fn to_buffer(&self) -> Vertex;
 }
 
 impl Vec3Buffer for Vec3 {
     fn to_buffer(&self) -> Vertex {
-        return [self.x, self.y, self.x];
+        return [self.x, self.y, self.z];
     }
 }
 

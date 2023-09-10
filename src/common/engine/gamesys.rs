@@ -5,12 +5,13 @@ use std::collections::HashMap;
 use std::any::Any;
 use std::string;
 use crate::common;
-use crate::common::angles::{QuatConstructor, Quat};
+use crate::common::angles::*;
 use crate::common::components::component_system::Constructor;
-use crate::common::matrices::M34;
-use crate::common::vertex::V3New;
+use crate::common::matrices::{M34, QuatToMat33};
+use crate::common::vertex::{V3New, V3Meth};
 use crate::common::{*, mesh::Mesh, components::{component_system::*, entity::{entity_system::*, *}}};
 use std::sync::Arc;
+use colored::Colorize;
 use parking_lot::*;
 use futures::join;
 use sdl2::*;
@@ -180,6 +181,58 @@ pub enum StatusCode{
     INITIALIZE,
 }
 
+pub struct Avg<T> {
+    inner: Vec<T>,
+    init: f32
+}
+
+impl Avg<f32> {
+    pub fn push(&mut self, value: f32)
+    {
+        if self.inner.len() > 30 {
+            self.inner.remove(0);
+        }
+        self.inner.push(value);
+    }
+
+    pub fn average(&self) -> f32 {
+        self.inner.iter().sum::<f32>() / self.inner.len() as f32
+    }
+
+    pub fn update(&mut self)
+    {
+        let change = self.change();
+        self.init += change;
+    }
+
+    pub fn change(&mut self) -> f32 {
+        if self.inner.len() > 1 {
+            self.inner.reverse();
+            let res = self.inner[0] - self.inner[1];
+            // println!("{}, {}", self.inner[0], self.inner[1]);
+            self.inner.reverse();
+            
+            res
+            
+        }
+        else if !self.inner.is_empty(){
+            self.inner[0]
+        }
+        else{
+            0.0
+        }
+    }
+
+    pub fn get_position(&mut self) -> f32 
+    {
+        self.init
+    }
+
+    pub fn new() -> Self {
+        Self { inner: Vec::new(), init: 0.0}
+    }
+}
+
 // This is always static(mustn't be created non-statically)
 pub struct Game {
 
@@ -191,9 +244,14 @@ pub struct Game {
     pub sdl: sdl2::Sdl,
     pub window: sdl2::video::Window,
     pub video: sdl2::VideoSubsystem,
+    pub mouse: sdl2::mouse::MouseUtil,
+    pub keyboard: sdl2::keyboard::KeyboardUtil,
     pub event_pump: Option<sdl2::EventPump>,
     pub window_x: u32,
     pub window_y: u32,
+    show_cursor: bool,
+    pub cursor_x: Avg<f32>,
+    pub cursor_y: Avg<f32>
 }
 
 impl Game {
@@ -229,7 +287,15 @@ impl Game {
             .expect("Failed to build window!")
         ;
         let ent_sys = components::component_system::ComponentRef_new(EntitySystem::new());
-
+        let mouse = sdl.mouse();
+        let keyboard = sdl.keyboard();
+        mouse.show_cursor(false);
+        mouse.capture(true);
+        mouse.warp_mouse_in_window(&window, x as i32 / 2, y as i32 / 2);
+        let mut cursor_x = Avg::<f32>::new();
+        let mut cursor_y = Avg::<f32>::new();
+        cursor_x.push(x as f32 / 2.0);
+        cursor_y.push(y as f32 / 2.0);
         Game { 
             gameName: Arc::new(Mutex::new(String::from("Game Name"))), 
             REGISTRAR: reg, 
@@ -239,9 +305,14 @@ impl Game {
             sdl: sdl,
             window: window,
             video: video,
+            mouse: mouse,
+            keyboard: keyboard,
             event_pump: None,
             window_x: x,
-            window_y: y
+            window_y: y,
+            show_cursor: false,
+            cursor_x: cursor_x,
+            cursor_y: cursor_y,
         }
     }
 
@@ -256,6 +327,7 @@ impl Game {
             let render_join_handle = std::thread::Builder::new().name(String::from("render")).spawn(|| {RenderPipelineSystem::init(p_render_sys)}).expect("Failed to create render thread!!");
             let entity_join_handle = std::thread::Builder::new().name(String::from("entity")).spawn(|| {EntitySystem::init(p_entity_sys)}).expect("Failed to start entity thread!!");
             let p_ent_sys_2 = self.ENTITY_SYS.clone();
+            let p_rend_sys_2 = self.RENDER_SYS.clone();
             let mut ent_sys_2 = p_ent_sys_2.lock();
             let mut entity_params = components::entity::entity_system::EntityParams {
                 position: vertex::Vec3::new(0, 0, 0),
@@ -264,6 +336,13 @@ impl Game {
 
             };
             let mut p_entity = ent_sys_2.add_entity(entity_params);
+            let mut entity_params2 = components::entity::entity_system::EntityParams {
+                position: vertex::Vec3::new(0, 0, 0),
+                rotation: angles::Quat::axis_angle(Vec3::new(0.0, 0.0, 0.0), 0.0),
+                scale: vertex::Vec3::new(1.0, 1.0, 1.0),
+
+            };
+            let mut p_entity2 = ent_sys_2.add_entity(entity_params2);
             drop(ent_sys_2);
             let def: common::components::component_system::Value = common::components::component_system::ValueBuilder::new().from_str(r#"
             {
@@ -284,15 +363,27 @@ impl Game {
             unsafe {
                 let pipe_id = RenderPipelineSystem::resgister_pipeline(pipe);
             }
-            p_entity.add_component::<components::entity::camera_component::CameraComponent>(cam_def);
-            let mut p_mesh = p_entity.add_component::<mesh_component::MeshComponent>(mesh_def);
-            let mut mesh = p_mesh.lock();
-            // mesh.triangles();
-            mesh.square();
-            // mesh.transform.rotate(Quat::euler(45.0, 0.0, 0.0));
-            drop(mesh);
+            let p_cam = p_entity.add_component::<components::entity::camera_component::CameraComponent>(cam_def);
+            let mut v_p_mesh = Vec::<ComponentRef<mesh_component::MeshComponent>>::new();
+            for i in 0..5 {
+                let mut p_mesh = p_entity2.add_component::<mesh_component::MeshComponent>(mesh_def.clone());
+                let mut mesh = p_mesh.lock();
+                // mesh.triangles();
+                mesh.square();
+                mesh.translate(Vec3::new(1.0 * i as f32, 0.0, 0.0));
+                drop(mesh);
+                v_p_mesh.push(p_mesh);
+            }
+            let mut cam = p_cam.lock();
+
+            cam.set_position(Vec3::new(0.0, 0.0, 10.0));
+            // cam.set_rotation(Quat::euler(Ang3::new(0.0, 0.0, 0.0)));
+            drop(cam);
+            EntitySystem::start(p_ent_sys_2.clone());
+            RenderPipelineSystem::start(p_rend_sys_2.clone());
 
             // here we loop for the events
+            // let mut forward = Vec3::new(1.0, 0.0, 0.0);
             'running: loop {
                 for event in self.event_pump.as_mut().unwrap().poll_iter() {
                     match event {
@@ -310,13 +401,114 @@ impl Game {
                                 _ => {}
                             }
                         }
+                        event::Event::KeyDown { timestamp, window_id, keycode, scancode, keymod, repeat } => {
+                            if let Some(key) = keycode {
+                                use keyboard::Keycode::*;
+                                match key {
+                                    W => {
+                                        // let mut cam = p_cam.lock();
+
+                                        // let ang = Ang3::new(0.0, 10.0, 0.0);
+                                        // cam.rotate(Quat::euler(ang));
+                                        p_entity.translate(Vec3::new(10.0, 0.0, 0.0));
+
+                                        println!("{}", "Move Forward".green());
+
+                                    }
+                                    S => {
+                                        // let mut cam = p_cam.lock();
+
+                                        // let ang = Ang3::new(0.0, -10.0, 0.0);
+                                        // cam.rotate(Quat::euler(ang));
+                                        p_entity.translate(Vec3::new(-10.0, 0.0, 0.0));
+
+                                        println!("{}", "Move Backward".green());
+
+                                    }
+                                    A => {
+                                        // let mut cam = p_cam.lock();
+
+                                        // let ang = Ang3::new(10.0, 0.0, 0.0);
+                                        // cam.rotate(Quat::euler(ang));
+                                        p_entity.translate(Vec3::new(0.0, -10.0, 0.0));
+                                        println!("{}", "Move Left".green());
+
+                                    }
+                                    D => {
+                                        // let mut cam = p_cam.lock();
+
+                                        // let ang = Ang3::new(-10.0, 0.0, 0.0);
+                                        // cam.rotate(Quat::euler(ang));
+                                        p_entity.translate(Vec3::new(0.0, 10.0, 0.0));
+                                        println!("{}", "Move Right".green());
+
+                                    }
+                                    Backquote => {
+                                        self.show_cursor = ! self.show_cursor;
+                                        self.mouse.capture(self.show_cursor);
+                                        self.mouse.show_cursor(self.show_cursor);
+                                        self.window.hide();
+                                        self.window.show();
+                                    }
+                                    Q => {
+                                        p_entity.translate(Vec3::new(0.0, 0.0, 10.0));
+                                    }
+                                    E => {
+                                        p_entity.translate(Vec3::new(0.0, 0.0, -10.0));
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                        event::Event::MouseMotion { timestamp, window_id, which, mousestate, x, y, xrel, yrel } => {
+                            if !self.show_cursor{
+                                let mut cam = p_cam.lock();
+                                self.cursor_x.push(x as f32);
+                                self.cursor_y.push(y as f32);
+                                self.cursor_x.update();
+                                self.cursor_y.update();
+                                let ang = Ang3::new(-self.cursor_x.change(), 0.0, 0.0);
+                                let quat = Quat::euler(ang);
+                                let ang2 = quat.to_euler();
+                                // println!("{}, {}, {}", ang2.y, ang2.p, ang2.r);
+                                // println!("{}", quat.to_mat33().to_mat34());
+                                println!("{}", self.cursor_x.change());
+                                cam.rotate(quat);
+                                // cam.set_rotation(quat);
+                                // cam.rotate(Quat::euler(Ang3::new(0.0, 0.0, self.cursor_y.get_position())));
+                                let mut new_x = x;
+                                let mut new_y = y;
+                                if x <= 1 {
+                                    new_x = self.window_x as i32 - 4;
+                                    self.mouse.warp_mouse_in_window(&self.window, new_x, new_y);
+                                    self.cursor_x.push(-new_x as f32);
+                                }
+                                if y <= 1 {
+                                    new_y = self.window_y as i32 - 4;
+                                    self.mouse.warp_mouse_in_window(&self.window, new_x, new_y);
+                                    self.cursor_y.push(-new_y as f32);
+                                }
+                                if x >= self.window_x as i32 - 1{
+                                    new_x = 4;
+                                    self.mouse.warp_mouse_in_window(&self.window, new_x, new_y);
+                                    self.cursor_x.push(-new_x as f32);
+                                }
+                                if y >= self.window_y as i32  - 1{
+                                    new_y = 4;
+                                    self.mouse.warp_mouse_in_window(&self.window, new_x, new_y);
+                                    self.cursor_y.push(-new_y as f32);
+                                }
+                                
+                                
+                                drop(cam);
+                            }
+                        }
                         _ => continue
                     }
                 }
                 // let mut mesh = p_mesh.lock();
                 // mesh.rotate(Quat::euler(1.0, 0.0, 0.0));
                 // drop(mesh);
-                
             }
 
             self.window.hide();
