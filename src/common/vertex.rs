@@ -1,7 +1,6 @@
 
 use std::{ops, f32::consts::PI, convert::TryFrom, fmt::{Display, Formatter, Result}};
 use crate::common::engine::gamesys::*;
-use serde::*;
 use super::matrices::Vec4;
 
 pub type Vertex = [f32; 3];
@@ -28,7 +27,7 @@ pub trait V3Meth {
 
 
 // Define attributes
-#[derive(Copy, Clone, Serialize, Deserialize)]
+#[derive(Copy, Clone)]
 pub struct Vec3 {
     pub x : f32,
     pub y : f32,

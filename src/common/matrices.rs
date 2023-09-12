@@ -169,7 +169,7 @@ impl QuatToMat33 for Quat {
             2.0 * s * (self.y * self.z + self.x * self.w),
             1.0 - 2.0 * s * (self.x.powi(2) + self.y.powi(2))
         );
-        
+        // println!("{x}, \n {y}, \n {z}");
         return Matrix33 { x: x, y: y, z: z };
     }
 }

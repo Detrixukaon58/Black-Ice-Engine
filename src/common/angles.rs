@@ -2,7 +2,6 @@ use std::{f32::consts::PI, fmt::Display};
 
 #[allow(unused_imports)]
 use crate::common::vertex::*;
-use serde::*;
 use super::engine::gamesys::Base;
 
 #[allow(dead_code)]
@@ -14,7 +13,7 @@ pub struct Ang3 {
 }
 
 impl Display for Ang3 {
-    fn fmt(&self, f: &mut __private::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Ang3({x}, {y}, {z})", x=self.y, y=self.p, z=self.r)
     }
 }
@@ -31,7 +30,7 @@ impl Ang3 {
 }
 
 
-#[derive(Copy, Clone, Serialize, Deserialize)]
+#[derive(Copy, Clone)]
 pub struct Quat {
     pub x : f32,
     pub y : f32,
@@ -65,7 +64,7 @@ pub trait QuaternionMath {
 }
 
 impl Display for Quat {
-    fn fmt(&self, f: &mut __private::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Quat({x}, {y}, {z}, {w})", x=self.x, y=self.y, z=self.z, w=self.w)
     }
 }

@@ -3,8 +3,6 @@
 
 use crate::common::{components::{component_system::*, entity::entity_system::*}, *, filesystem::files::*, vertex::*, matrices::*, engine::gamesys::*, angles::*, transform::Transform};
 
-use serde::*;
-
 
 pub struct CameraComponent {
     projection: MatrixProjection,
@@ -39,18 +37,25 @@ impl BaseComponent for CameraComponent {
         match event.event_flag {
             EventFlag::INIT => {
                 self.init();
-                self.transform.rotate(Quat::euler(Ang3::new(0.0, 0.0, 0.0)));
+                // self.transform.rotate(Quat::euler(Ang3::new(45.0, 0.0, 0.0)));
             },
             EventFlag::UPDATE => {
 
                 //self.transform.rotate(Quat::euler(Ang3::new(1.0 * std::time::Duration::from_millis(16).as_secs_f32(), 0.0, 0.0)));
-
+                unsafe {
+                    // self.transform.set_rotation(Quat::euler(Ang3::new(
+                    //     GAME.cursor_x.get_position() / 25.0, 
+                    //     GAME.cursor_y.get_position() / 25.0,
+                    //     0.0,
+                    // )));
+                    
+                }
                 self.look_at(
                     self.p_entity.get_world_tm() * self.transform.get_world_tm() * Vec3::new(0.0, 0.0, 0.0), 
                     self.p_entity.get_world_tm() * self.transform.get_world_tm() * self.forward
                 );
                 
-                println!("{}",  self.transform.rotation.to_euler());
+                // println!("{}",  self.transform.get_world_tm());
                 self.update();
             },
             EventFlag::RESPAWN => {
@@ -132,7 +137,7 @@ impl CameraComponent {
             let p_render_sys = Game::get_render_sys();
             let mut render_sys = p_render_sys.write();
             render_sys.update_camera(self.camera_id, &self.projection, &(self.view_transform), self.up, self.forward);
-
+            
             drop(render_sys);
             
         }
@@ -163,8 +168,10 @@ impl CameraComponent {
 
     pub fn look_at(&mut self, from: Vec3, to: Vec3) {
         let forward = (to - from).normalized();
-        let right = self.up.cross(forward);
+        let up = ((self.p_entity.get_world_tm() * self.transform.get_world_tm() * self.up) - from).normalized();
+        let right = up.cross(forward);
         let new_up = forward.cross(right);
+        // println!("forward: {forward}, right: {right}, up: {new_up}");
         let y = Vec4::new(
             right.y, new_up.y, forward.y, from.y
         );

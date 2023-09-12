@@ -365,19 +365,24 @@ impl Game {
             }
             let p_cam = p_entity.add_component::<components::entity::camera_component::CameraComponent>(cam_def);
             let mut v_p_mesh = Vec::<ComponentRef<mesh_component::MeshComponent>>::new();
-            for i in 0..5 {
+            for i in 0..10 {
                 let mut p_mesh = p_entity2.add_component::<mesh_component::MeshComponent>(mesh_def.clone());
                 let mut mesh = p_mesh.lock();
                 // mesh.triangles();
                 mesh.square();
-                mesh.translate(Vec3::new(1.0 * i as f32, 0.0, 0.0));
+                mesh.translate(Vec3::new(15.0 * i as f32, 0.0, 0.0));
                 drop(mesh);
                 v_p_mesh.push(p_mesh);
             }
             let mut cam = p_cam.lock();
 
-            cam.set_position(Vec3::new(0.0, 0.0, 10.0));
-            // cam.set_rotation(Quat::euler(Ang3::new(0.0, 0.0, 0.0)));
+            cam.set_position(Vec3::new(0.0, 0.0, 1.0));
+            cam.set_rotation(Quat::euler(Ang3::new(
+                self.cursor_x.get_position() / 25.0, 
+                self.cursor_y.get_position() * self.cursor_x.get_position().cos() / 25.0,
+                self.cursor_y.get_position() * self.cursor_x.get_position().sin() / 25.0,
+            )));
+            // cam.set_rotation(Quat::euler(Ang3::new(0.0, 90.0, 0.0)));
             drop(cam);
             EntitySystem::start(p_ent_sys_2.clone());
             RenderPipelineSystem::start(p_rend_sys_2.clone());
@@ -406,41 +411,23 @@ impl Game {
                                 use keyboard::Keycode::*;
                                 match key {
                                     W => {
-                                        // let mut cam = p_cam.lock();
 
-                                        // let ang = Ang3::new(0.0, 10.0, 0.0);
-                                        // cam.rotate(Quat::euler(ang));
                                         p_entity.translate(Vec3::new(10.0, 0.0, 0.0));
-
-                                        println!("{}", "Move Forward".green());
 
                                     }
                                     S => {
-                                        // let mut cam = p_cam.lock();
 
-                                        // let ang = Ang3::new(0.0, -10.0, 0.0);
-                                        // cam.rotate(Quat::euler(ang));
                                         p_entity.translate(Vec3::new(-10.0, 0.0, 0.0));
-
-                                        println!("{}", "Move Backward".green());
 
                                     }
                                     A => {
-                                        // let mut cam = p_cam.lock();
 
-                                        // let ang = Ang3::new(10.0, 0.0, 0.0);
-                                        // cam.rotate(Quat::euler(ang));
                                         p_entity.translate(Vec3::new(0.0, -10.0, 0.0));
-                                        println!("{}", "Move Left".green());
 
                                     }
                                     D => {
-                                        // let mut cam = p_cam.lock();
 
-                                        // let ang = Ang3::new(-10.0, 0.0, 0.0);
-                                        // cam.rotate(Quat::euler(ang));
                                         p_entity.translate(Vec3::new(0.0, 10.0, 0.0));
-                                        println!("{}", "Move Right".green());
 
                                     }
                                     Backquote => {
@@ -462,20 +449,10 @@ impl Game {
                         }
                         event::Event::MouseMotion { timestamp, window_id, which, mousestate, x, y, xrel, yrel } => {
                             if !self.show_cursor{
-                                let mut cam = p_cam.lock();
                                 self.cursor_x.push(x as f32);
                                 self.cursor_y.push(y as f32);
                                 self.cursor_x.update();
                                 self.cursor_y.update();
-                                let ang = Ang3::new(-self.cursor_x.change(), 0.0, 0.0);
-                                let quat = Quat::euler(ang);
-                                let ang2 = quat.to_euler();
-                                // println!("{}, {}, {}", ang2.y, ang2.p, ang2.r);
-                                // println!("{}", quat.to_mat33().to_mat34());
-                                println!("{}", self.cursor_x.change());
-                                cam.rotate(quat);
-                                // cam.set_rotation(quat);
-                                // cam.rotate(Quat::euler(Ang3::new(0.0, 0.0, self.cursor_y.get_position())));
                                 let mut new_x = x;
                                 let mut new_y = y;
                                 if x <= 1 {
@@ -499,16 +476,11 @@ impl Game {
                                     self.cursor_y.push(-new_y as f32);
                                 }
                                 
-                                
-                                drop(cam);
                             }
                         }
                         _ => continue
                     }
                 }
-                // let mut mesh = p_mesh.lock();
-                // mesh.rotate(Quat::euler(1.0, 0.0, 0.0));
-                // drop(mesh);
             }
 
             self.window.hide();

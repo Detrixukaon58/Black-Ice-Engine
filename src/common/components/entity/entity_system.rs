@@ -1,7 +1,6 @@
 // TODO: Make an entity registration system to allow for components to be registered to an entity
 #![allow(unused)]
 use std::{any::*, thread::JoinHandle, collections::*, sync::{Arc, atomic::*}, future::*, pin::*, ops::DerefMut, alloc::Layout};
-use serde::*;
 use bitmask_enum::*;
 
 use crate::common::{engine::{gamesys::*, threading::ThreadData}, vertex::*, angles::*, components::{component_system::{*, self}, entity}, transform::{self, Transform}, matrices::Matrix34};

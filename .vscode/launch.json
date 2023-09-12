@@ -14,7 +14,7 @@
                     "build",
                     "--bin=black_ice_executable",
                     "--lib",
-                    "--features=vulkan",
+                    "--features=opengl",
                 ],
                 "filter": {
                     "kind": "bin"

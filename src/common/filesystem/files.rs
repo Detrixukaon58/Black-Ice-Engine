@@ -2,7 +2,6 @@ use std::any::Any;
 use std::fmt::{Display, Error};
 use std::fs::{*, self};
 use std::io::{prelude::*, BufReader};
-use serde::*;
 use shaderc::CompileOptions;
 
 use crate::common::{APP_DIR, materials};
@@ -12,7 +11,7 @@ use crate::common::engine::gamesys::*;
 #[cfg(target_os = "windows")] const ASSET_PATH: &str =  "F:\\Rust\\Program 1\\assets";
 #[cfg(target_os = "linux")] const ASSET_PATH: &str = "/home/detrix/rust/black-ice/assets";
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone)]
 pub struct AssetPath {
     path: String,
 }

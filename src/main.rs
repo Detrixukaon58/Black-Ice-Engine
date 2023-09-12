@@ -3,7 +3,6 @@
 use futures::*;
 use std::{mem::{size_of_val, size_of}, str::SplitWhitespace, ffi::{CString, OsString}, any::TypeId, fs, future::*};
 use bytemuck::try_cast_ref;
-#[cfg(feature = "opengl")] use ogl33::*;
 pub mod common;
 use common::{vertex::*, filesystem::files::{FileSys, Reader}, *, materials::ShaderDescriptor, engine::gamesys::{Base, BaseToAny, GAME}, textures::Texture, matrices::*};
 
@@ -171,7 +170,7 @@ fn generate_shader(frag: &str, vert: &str) -> GLuint {
         return shader_program;
     }
 }
-#[cfg(feature = "opengl")]
+#[cfg(feature = "fake")]
 fn add_shader_params(program: GLuint, description: Box<&dyn ShaderDescriptor>){
     unsafe{
         let count = description.get_num_values();

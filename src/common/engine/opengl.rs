@@ -1,16 +1,15 @@
 #![cfg(feature = "opengl")]
 #![allow(unused)]
 
-use std::{sync::Arc, mem::{size_of_val, size_of}, f32::consts::PI, fs::File};
+use std::{sync::Arc, mem::{size_of_val, size_of}, f32::consts::PI, fs::File, collections::HashMap};
 
 
 use colored::Colorize;
 use gl46::*;
 use sdl2::video::GLContext;
-use winit::dpi::Pixel;
-use crate::common::{vertex::*, *, materials::Shader, matrices::*, angles::{QuatConstructor, Quat}};
+use crate::common::{vertex::*, *, materials::{Shader, ShaderDataHint}, matrices::*, angles::{QuatConstructor, Quat}, mesh::Mesh};
 use parking_lot::*;
-use super::pipeline::Pipeline;
+use super::pipeline::{Pipeline, Camera};
 
 pub struct SdlGlContext(GLContext);
 
@@ -19,15 +18,626 @@ unsafe impl Sync for SdlGlContext{}
 
 // Try to find a way to implement a graphics pipeline for opengl that will be similar to Vulkan's and gles!!
 
+#[derive(Clone)]
+pub struct MeshDriver {
+    p_mesh: Arc<Mutex<Mesh>>,
+    vao: Arc<Mutex<Vec<u32>>>,
+    vbo: Arc<Mutex<Vec<u32>>>,
+    elem_buffer: Arc<Mutex<Vec<u32>>>,
+    shader_programs: Arc<Mutex<Vec<u32>>>,
+    vertices: Arc<Mutex<Vec<Vec<f32>>>>,
+    indices: Arc<Mutex<Vec<Vec<u32>>>>,
+}
+
+impl MeshDriver {
+    pub fn draw(&self, gl: &GlFns, camera: &Camera) {
+        let p_mesh = self.p_mesh.clone();
+        let mesh = p_mesh.lock();
+        let vao_buff = self.vao.lock();
+        let vbo_buff = self.vbo.lock();
+        let shads = self.shader_programs.lock();
+        let elems = self.elem_buffer.lock();
+        let inds = self.indices.lock();
+        for i in 0..(shads.len()) {
+            let mesh_object = mesh.meshes[i].lock();
+            let vao = vao_buff[i];
+            let vbo = vbo_buff[i];
+            let elem_buffer = elems[i];
+            let shader_program = shads[i];
+            let ind = &inds[i];
+            unsafe{
+                
+                gl.UseProgram(shader_program);                
+                let mut count = 0;
+                gl.GetProgramiv(shader_program, GL_ACTIVE_UNIFORMS, &mut count);
+                for i in 0..count {
+                    let mut length = 0;
+                    let mut size = 0;
+                    let mut type_ = std::mem::zeroed();
+                    let mut name: [u8; 128] = std::mem::zeroed();
+                    gl.GetActiveUniform(shader_program, i as u32, 128, &mut length, &mut size, &mut type_, name.as_mut_ptr());
+
+                    let nn = &std::str::from_utf8(name.as_slice()).unwrap()[..length as usize];
+                    
+                    match nn {
+
+                        "_p" => {
+                            // model view projection
+                            
+                            // let right = camera.up.cross(camera.forward);
+                            let mut p = camera.projection;
+
+                            gl.ProgramUniformMatrix4fv(shader_program, i, 1, GL_FALSE.0 as u8, p.to_buffer().as_ptr());
+                        },
+                        "_mvp" => {
+                            // model view projection
+
+                            let right = camera.up.cross(camera.forward);
+                            
+                            let mut proj = camera.projection;
+
+                            let mut m = mesh.transform;
+                            m.x = -mesh.transform.x * right.x;
+                            m.x += -mesh.transform.y * right.y;
+                            m.x += -mesh.transform.z * right.z;
+                            m.y = -mesh.transform.x * camera.up.x;
+                            m.y += -mesh.transform.y * camera.up.y;
+                            m.y += -mesh.transform.z * camera.up.z;
+                            m.z = -mesh.transform.x * camera.forward.x;
+                            m.z += -mesh.transform.y * camera.forward.y;
+                            m.z += -mesh.transform.z * camera.forward.z;
+                            
+                            let mvp = proj * camera.transform * m;
+                            gl.ProgramUniformMatrix4fv(shader_program, i, 1, GL_FALSE.0 as u8, mvp.to_buffer().as_ptr());
+                        },
+                        "_m" => {
+                            // model view
+                            let right = camera.up.cross(camera.forward);
+                            let mut m = mesh.transform;
+                            m.x = -mesh.transform.x * right.x;
+                            m.x += -mesh.transform.y * right.y;
+                            m.x += -mesh.transform.z * right.z;
+                            m.y = -mesh.transform.x * camera.up.x;
+                            m.y += -mesh.transform.y * camera.up.y;
+                            m.y += -mesh.transform.z * camera.up.z;
+                            m.z = -mesh.transform.x * camera.forward.x;
+                            m.z += -mesh.transform.y * camera.forward.y;
+                            m.z += -mesh.transform.z * camera.forward.z;
+                            println!("{}", m);
+                            gl.ProgramUniformMatrix4fv(shader_program, i, 1, GL_FALSE.0 as u8, m.to_buffer44().as_ptr());
+                        }
+                        "_v" => {
+                            // model view
+                            let v = camera.transform;
+
+                            gl.ProgramUniformMatrix4fv(shader_program, i, 1, GL_FALSE.0 as u8, v.to_buffer44().as_ptr());
+                        }
+                        "_norm" => {
+                            // rotation of model view
+                            let right = camera.up.cross(camera.forward);
+                            
+                            let mut m = mesh.transform;
+                            m.x = mesh.transform.x * right.x;
+                            m.x += mesh.transform.y * right.y;
+                            m.x += mesh.transform.z * right.z;
+                            m.y = mesh.transform.x * camera.up.x;
+                            m.y += mesh.transform.y * camera.up.y;
+                            m.y += mesh.transform.z * camera.up.z;
+                            m.z = mesh.transform.x * camera.forward.x;
+                            m.z += mesh.transform.y * camera.forward.y;
+                            m.z += mesh.transform.z * camera.forward.z;
+                            let mv = camera.transform * m;
+                            let q = mv.get_rotation();
+                            let norm = q.to_mat33();
+                            gl.ProgramUniformMatrix3fv(shader_program, i, 1, GL_FALSE.0 as u8, norm.to_buffer().as_ptr());
+                        }
+                        "nemissa" => {
+                            // let file = image::open(APP_DIR.to_owned() + "\\assets\\images\\nemissa_hitomi.png").unwrap();
+                            // let mut texture = 0;
+                            // gl.GenTextures(1, &mut texture);
+                            // gl.BindTexture(GL_TEXTURE_2D, texture);
+                            // gl.TexImage2D(GL_TEXTURE_2D, 0, GL_RGB.0 as i32, file.width() as i32, file.height() as i32, 0, GL_RGB, GL_UNSIGNED_BYTE, file.as_bytes().as_ptr().cast());
+                            
+                        }
+                        _ => {
+                            // try to get value similar to it in the shader uniforms!!
+                            let uniform = mesh_object.material.shader_descriptor.iter().find(|v| v.0.eq(nn)).expect(("Failed to find uniform. Maybe something went wrong in the Material creation process?? uniform:".to_owned() + format!("{nn}").as_str()).as_str());
+                            let uniform_value = uniform.1.0.clone();
+
+                            match *uniform_value {
+                                materials::ShaderType::Integer(v) => {
+                                    gl.ProgramUniform1i(shader_program, i, v);
+                                    
+                                },
+                                materials::ShaderType::Boolean(v) => {
+                                    gl.ProgramUniform1i(shader_program, i, v as i32);
+                                },
+                                materials::ShaderType::UnsignedInteger(v) => {
+                                    gl.ProgramUniform1ui(shader_program, i, v);
+                                },
+                                materials::ShaderType::Float(v) => {
+                                    gl.ProgramUniform1f(shader_program, i, v);
+                                },
+                                materials::ShaderType::Double(v) => {
+                                    gl.ProgramUniform1d(shader_program, i, v);
+                                },
+                                materials::ShaderType::Vec3(v) => {
+                                    gl.ProgramUniform3fv(shader_program, i, 1, v.as_ptr());
+                                },
+                                materials::ShaderType::Vec4(v) => {
+                                    gl.ProgramUniform4fv(shader_program, i, 1, v.as_ptr());
+                                },
+                                materials::ShaderType::Vec2(v) => {
+                                    gl.ProgramUniform2fv(shader_program, i, 1, v.as_ptr());
+                                },
+                                materials::ShaderType::IVec3(v) => {
+                                    gl.ProgramUniform3iv(shader_program, i, 1, v.as_ptr());
+                                },
+                                materials::ShaderType::IVec4(v) => {
+                                    gl.ProgramUniform4iv(shader_program, i, 1, v.as_ptr());
+                                },
+                                materials::ShaderType::IVec2(v) => {
+                                    gl.ProgramUniform3iv(shader_program, i, 1, v.as_ptr());
+                                },
+                                materials::ShaderType::UVec3(v) => {
+                                    gl.ProgramUniform3uiv(shader_program, i, 1, v.as_ptr());
+                                },
+                                materials::ShaderType::UVec4(v) => {
+                                    gl.ProgramUniform4uiv(shader_program, i, 1, v.as_ptr());
+                                },
+                                materials::ShaderType::UVec2(v) => {
+                                    gl.ProgramUniform2uiv(shader_program, i, 1, v.as_ptr());
+                                },
+                                materials::ShaderType::DVec3(v) => {
+                                    gl.ProgramUniform3dv(shader_program, i, 1, v.as_ptr());
+                                },
+                                materials::ShaderType::DVec4(v) => {
+                                    gl.ProgramUniform3dv(shader_program, i, 1, v.as_ptr());
+                                },
+                                materials::ShaderType::DVec2(v) => {
+                                    gl.ProgramUniform3dv(shader_program, i, 1, v.as_ptr());
+                                },
+                                materials::ShaderType::Sampler2D(v, width, height) => {
+                                    
+                                },
+                            }
+                        }
+
+                    }
+                    
+                    
+                }
+                gl.BindVertexArray(vao);
+                gl.BindBuffer(GL_ARRAY_BUFFER, vbo);
+                gl.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, elem_buffer);
+                let mut buff_size = 0;
+                gl.GetBufferParameteriv(GL_ARRAY_BUFFER, GL_BUFFER_SIZE, &mut buff_size);
+                gl.DrawElements(GL_TRIANGLES, ind.len() as i32, GL_UNSIGNED_INT, 0 as *const _);
+            }
+        }
+        
+    }
+
+    // Usefull for live remeshing
+    pub unsafe fn update_mesh(&mut self, driver: &mut DriverValues, camera: &Camera) {
+        
+        let mesh = self.p_mesh.lock();
+
+        let mut vao_vec = Vec::new();
+        let mut vbo_vec = Vec::new();
+        let mut elem_buff_vec = Vec::new();
+        let mut shader_progs = Vec::new();
+        let mut vertices = Vec::<Vec<f32>>::new();
+        let mut indices = Vec::<Vec<u32>>::new();
+        
+        let mut vao_buff = self.vao.lock();
+        let mut vbo_buff = self.vbo.lock();
+        let mut shads = self.shader_programs.lock();
+        let mut elems = self.elem_buffer.lock();
+        let mut verts = self.vertices.lock();
+        let mut inds = self.indices.lock();
+
+        let right = camera.up.cross(camera.forward);
+        for i in 0..mesh.meshes.len() {
+            let gl = driver.gl.as_ref().unwrap();
+            let mesh_object = mesh.meshes[i].lock();
+            let mut vao = match vao_buff.get(i) {
+                Some(v) => *v,
+                None => {
+                    let mut v = 0;
+                    gl.CreateVertexArrays(1, &mut v);
+                    assert_ne!(v, 0);
+                    v
+            }
+            };
+            let mut vbo = match vbo_buff.get(i) {
+                Some(v) => *v,
+                None => {
+                    let mut v = 0;
+                    gl.GenBuffers(1, &mut v);
+                    assert_ne!(v, 0);
+                    v
+             }
+            };
+            let (mut elem_buffer) = match elems.get(i) {
+                Some(v) => *v,
+                None => {
+                    let mut v = 0;
+                    gl.GenBuffers(1, &mut v);
+                    assert_ne!(v, 0);
+                    v
+            }
+            };
+            let mut shader_program = 0;
+            unsafe{           
+                if !mesh_object.normals.is_empty() {
+                    if !mesh_object.texture_coord.is_empty(){
+                        let mut buffer = Vec::<(Vec3, Vec3, (f32, f32))>::new();
+                        for i in 0..mesh_object.verts.len() {
+                            let vert = mesh_object.verts[i];
+                            let norm = mesh_object.normals.iter().find(|v| v.0 == i as i16).unwrap();
+                            let texcoord = mesh_object.texture_coord.iter().find(|v| v.0 == i as i16).unwrap();
+                            buffer.push((vert.clone(), norm.1.clone(), texcoord.1.clone()));
+                        }
+                        gl.BindVertexArray(vao);
+
+
+                        gl.BindBuffer(GL_ARRAY_BUFFER, vbo);
+                        let temp = buffer.iter().map(|f| {
+                            let v = f.0.to_buffer();
+                            let n = f.1.to_buffer();
+                            vec![
+                                v[0], 
+                                v[1], 
+                                v[2], 
+                                n[0], 
+                                n[1], 
+                                n[2], 
+                                f.2.0, 
+                                f.2.1
+                                ]
+                        }).collect::<Vec<Vec<f32>>>();
+                        let vertice = temp.iter().flatten().map(|v| v.clone()).collect::<Vec<f32>>();
+                        vertices.push(vertice);
+                        let verts = vertices[i].as_slice();
+
+
+                        gl.BufferData(GL_ARRAY_BUFFER, size_of_val(verts) as isize, verts.as_ptr().cast(), GL_STATIC_DRAW);
+                        gl.VertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE.0 as u8, 8 * size_of::<f32>() as i32, 0 as *const _);
+                        gl.EnableVertexAttribArray(0);
+                        gl.VertexAttribPointer(1, 3, GL_FLOAT, GL_TRUE.0 as u8, (8 * size_of::<f32>()) as i32, (3 * size_of::<f32>()) as *const _);
+                        gl.EnableVertexAttribArray(1);
+                        gl.VertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE.0 as u8, (8 * size_of::<f32>()) as i32, (6 * size_of::<f32>()) as *const _);
+                        gl.EnableVertexAttribArray(2);
+                        
+
+                        let indice = mesh_object.faces.iter().map(|v| [v.0 as u32, v.1 as u32, v.2 as u32]).collect::<Vec<[u32;3]>>().as_slice().concat();
+                        indices.push(indice);
+                        let ind = indices[i].as_slice();
+                
+                        gl.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, elem_buffer);
+                        gl.BufferData(GL_ELEMENT_ARRAY_BUFFER, (ind.len() * size_of::<f32>()) as isize, ind.as_ptr().cast(), GL_STATIC_DRAW);
+
+                    }
+                    else{
+                        let mut buffer = Vec::<(Vec3, Vec3)>::new();
+                        for i in 0..mesh_object.verts.len() {
+                            let vert = mesh_object.verts[i];
+                            let norm = mesh_object.normals.iter().find(|v| v.0 == i as i16).unwrap();
+                            buffer.push((vert.clone(), norm.1.clone()));
+                        }
+                        gl.BindVertexArray(vao);
+
+
+                        gl.BindBuffer(GL_ARRAY_BUFFER, vbo);
+                        let temp = buffer.iter().map(|f| {
+                            let v = f.0.to_buffer();
+                            let n = f.1.to_buffer();
+                            vec![
+                                v[0], 
+                                v[1], 
+                                v[2], 
+                                n[0], 
+                                n[1], 
+                                n[2], 
+                                ]
+                        }).collect::<Vec<Vec<f32>>>();
+                        let vertice = temp.iter().flatten().map(|v| v.clone()).collect::<Vec<f32>>();
+                        vertices.push(vertice);
+                        let verts = vertices[i].as_slice();
+                        
+                        gl.BufferData(GL_ARRAY_BUFFER, size_of_val(verts) as isize, verts.as_ptr().cast(), GL_STATIC_DRAW);
+                        gl.VertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE.0 as u8, 6 * size_of::<f32>() as i32, 0 as *const _);
+                        gl.EnableVertexAttribArray(0);
+                        gl.VertexAttribPointer(1, 3, GL_FLOAT, GL_TRUE.0 as u8, (6 * size_of::<f32>()) as i32, (3 * size_of::<f32>()) as *const _);
+                        gl.EnableVertexAttribArray(1);
+                
+                        let indice = mesh_object.faces.iter().map(|v| [v.0 as u32, v.1 as u32, v.2 as u32]).collect::<Vec<[u32;3]>>().as_slice().concat();
+                        indices.push(indice);
+                        let ind = indices[i].as_slice();
+                
+                        gl.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, elem_buffer);
+                        gl.BufferData(GL_ELEMENT_ARRAY_BUFFER, (ind.len() * size_of::<f32>()) as isize, ind.as_ptr().cast(), GL_STATIC_DRAW);
+                        
+                    }
+                }
+                else {
+                    if !mesh_object.texture_coord.is_empty() {
+                        let mut buffer = Vec::<(Vec3, (f32, f32))>::new();
+                        for i in 0..mesh_object.verts.len() {
+                            let vert = mesh_object.verts[i];
+                            let texcoord = mesh_object.texture_coord.iter().find(|v| v.0 == i as i16).unwrap();
+                            buffer.push((vert.clone(), texcoord.1.clone()));
+                        }
+                        gl.BindVertexArray(vao);
+
+
+                        gl.BindBuffer(GL_ARRAY_BUFFER, vbo);
+                        let temp = buffer.iter().map(|f| {
+                            let v = f.0.to_buffer();
+                            vec![
+                                v[0], 
+                                v[1], 
+                                v[2], 
+                                f.1.0, 
+                                f.1.1
+                                ]
+                        }).collect::<Vec<Vec<f32>>>();
+                        let vertice = temp.iter().flatten().map(|v| v.clone()).collect::<Vec<f32>>();
+                        vertices.push(vertice);
+                        let verts = vertices[i].as_slice();
+                        
+                        gl.BufferData(GL_ARRAY_BUFFER, size_of_val(verts) as isize, verts.as_ptr().cast(), GL_STATIC_DRAW);
+                        gl.VertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE.0 as u8, 5 * size_of::<f32>() as i32, 0 as *const _);
+                        gl.EnableVertexAttribArray(0);
+                        gl.VertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE.0 as u8, (5 * size_of::<f32>()) as i32, (3 * size_of::<f32>()) as *const _);
+                        gl.EnableVertexAttribArray(2);
+                
+                        let indice = mesh_object.faces.iter().map(|v| [v.0 as u32, v.1 as u32, v.2 as u32]).collect::<Vec<[u32;3]>>().as_slice().concat();
+                        indices.push(indice);
+                        let ind = indices[i].as_slice();
+                
+                        gl.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, elem_buffer);
+                        gl.BufferData(GL_ELEMENT_ARRAY_BUFFER, (ind.len() * size_of::<f32>()) as isize, ind.as_ptr().cast(), GL_STATIC_DRAW);
+                       
+                        
+                    }
+                    else {
+                        let buffer = mesh_object.verts.clone();
+                        gl.BindVertexArray(vao);
+
+
+                        gl.BindBuffer(GL_ARRAY_BUFFER, vbo);
+                        let temp = buffer.iter().map(|f| {
+                            let v = f.to_buffer();
+                            vec![
+                                v[0], 
+                                v[1], 
+                                v[2], 
+
+                                ]
+                        }).collect::<Vec<Vec<f32>>>();
+                        let vertice = temp.iter().flatten().map(|v| v.clone()).collect::<Vec<f32>>();
+                        vertices.push(vertice);
+                        let verts = vertices[i].as_slice();
+                        
+                        gl.BufferData(GL_ARRAY_BUFFER, size_of_val(verts) as isize, verts.as_ptr().cast(), GL_STATIC_DRAW);
+                        gl.VertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE.0 as u8, 3 * size_of::<f32>() as i32, 0 as *const _);
+                        gl.EnableVertexAttribArray(0);
+                
+                        let indice = mesh_object.faces.iter().map(|v| [v.0 as u32, v.1 as u32, v.2 as u32]).collect::<Vec<[u32;3]>>().as_slice().concat();
+                        indices.push(indice);
+                        let ind = indices[i].as_slice();
+                
+                        gl.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, elem_buffer);
+                        gl.BufferData(GL_ELEMENT_ARRAY_BUFFER, (ind.len() * size_of::<f32>()) as isize, ind.as_ptr().cast(), GL_STATIC_DRAW);
+                    }
+                }
+            }
+            let shader_name = mesh_object.material.shader.shader_name.clone();
+
+            let sh = DriverValues::register_shader(driver, shader_name, mesh_object.material.shader.clone());
+            let (name, vertex_shader, fragment_shader) = &driver.shader_stages[sh];
+            let gl = driver.gl.as_ref().unwrap();
+            shader_program = match shads.get(i) {
+                Some(v) => *v,
+                None => {
+                    let v = gl.CreateProgram();
+                    v
+                }
+            };
+            gl.AttachShader(shader_program, *vertex_shader);
+            gl.AttachShader(shader_program, *fragment_shader);
+            gl.LinkProgram(shader_program);
+            vao_vec.push(vao);
+            vbo_vec.push(vbo);
+            elem_buff_vec.push(elem_buffer);
+            shader_progs.push(shader_program);
+        }
+        drop(mesh);
+        *vao_buff = vao_vec;
+        *vbo_buff = vbo_vec;
+        *elems = elem_buff_vec;
+        *shads = shader_progs;
+        *verts = vertices;
+        *inds = indices;
+
+    }
+
+    pub fn new(p_driver: Arc<Mutex<Option<DriverValues>>>, p_mesh: Arc<Mutex<Mesh>>) -> Self {
+        let mut dd = p_driver.lock();
+        let mut driver = dd.as_mut().unwrap();
+        let mesh = p_mesh.lock();
+        let mut vao_vec = Vec::new();
+        let mut vbo_vec = Vec::new();
+        let mut elem_buff_vec = Vec::new();
+        let mut shader_progs = Vec::new();
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+        for p_mesh_object in &mesh.meshes {
+            let mesh_object = p_mesh_object.lock();
+            let mut vao = 0;
+            let mut vbo = 0;
+            let mut elem_buffer = 0;
+            let mut shader_program = 0;
+            unsafe{           
+                if !mesh_object.normals.is_empty() {
+                    if !mesh_object.texture_coord.is_empty(){
+                        let mut buffer = Vec::<(Vec3, Vec3, (f32, f32))>::new();
+                        for i in 0..mesh_object.verts.len() {
+                            let vert = mesh_object.verts[i];
+                            let norm = mesh_object.normals.iter().find(|v| v.0 == i as i16).unwrap();
+                            let texcoord = mesh_object.texture_coord.iter().find(|v| v.0 == i as i16).unwrap();
+                            buffer.push((vert.clone(), norm.1.clone(), texcoord.1.clone()));
+                        }
+                        let temp = buffer.iter().map(|f| {
+                            let v = f.0.to_buffer();
+                            let n = f.1.to_buffer();
+                            vec![
+                                v[0], 
+                                v[1], 
+                                v[2], 
+                                n[0], 
+                                n[1], 
+                                n[2], 
+                                f.2.0, 
+                                f.2.1
+                                ]
+                        }).collect::<Vec<Vec<f32>>>();
+                        let vertice = temp.iter().flatten().map(|v| v.clone()).collect::<Vec<f32>>();
+                        vertices.push(vertice);
+                        let verts = vertices.last().unwrap().as_slice();
+                        let indice = mesh_object.faces.iter().map(|v| [v.0 as u32, v.1 as u32, v.2 as u32]).collect::<Vec<[u32;3]>>().as_slice().concat();
+                        indices.push(indice);
+                        let ind = indices.last().unwrap().as_slice();
+                        (vao, vbo, elem_buffer) = DriverValues::create_buffer_vec_norm_tex(&mut driver, verts, ind);
+                    }
+                    else{
+                        let mut buffer = Vec::<(Vec3, Vec3)>::new();
+                        for i in 0..mesh_object.verts.len() {
+                            let vert = mesh_object.verts[i];
+                            let norm = mesh_object.normals.iter().find(|v| v.0 == i as i16).unwrap();
+                            buffer.push((vert.clone(), norm.1.clone()));
+                        }
+                        let temp = buffer.iter().map(|f| {
+                            let v = f.0.to_buffer();
+                            let n = f.1.to_buffer();
+                            vec![
+                                v[0], 
+                                v[1], 
+                                v[2], 
+                                n[0], 
+                                n[1], 
+                                n[2], 
+                                ]
+                        }).collect::<Vec<Vec<f32>>>();
+                        let vertice = temp.iter().flatten().map(|v| v.clone()).collect::<Vec<f32>>();
+                        vertices.push(vertice);
+                        let verts = vertices.last().unwrap().as_slice();
+                        let indice = mesh_object.faces.iter().map(|v| [v.0 as u32, v.1 as u32, v.2 as u32]).collect::<Vec<[u32;3]>>().as_slice().concat();
+                        indices.push(indice);
+                        let ind = indices.last().unwrap().as_slice();
+                        (vao, vbo, elem_buffer) = DriverValues::create_buffer_vec_norm(&mut driver, verts, ind);
+                    }
+                }
+                else {
+                    if !mesh_object.texture_coord.is_empty() {
+                        let mut buffer = Vec::<(Vec3, (f32, f32))>::new();
+                        for i in 0..mesh_object.verts.len() {
+                            let vert = mesh_object.verts[i];
+                            let texcoord = mesh_object.texture_coord.iter().find(|v| v.0 == i as i16).unwrap();
+                            buffer.push((vert.clone(), texcoord.1.clone()));
+                        }
+                        let temp = buffer.iter().map(|f| {
+                            let v = f.0.to_buffer();
+                            vec![
+                                v[0], 
+                                v[1], 
+                                v[2], 
+                                f.1.0, 
+                                f.1.1
+                                ]
+                        }).collect::<Vec<Vec<f32>>>();
+                        let vertice = temp.iter().flatten().map(|v| v.clone()).collect::<Vec<f32>>();
+                        vertices.push(vertice);
+                        let verts = vertices.last().unwrap().as_slice();
+                        let indice = mesh_object.faces.iter().map(|v| [v.0 as u32, v.1 as u32, v.2 as u32]).collect::<Vec<[u32;3]>>().as_slice().concat();
+                        indices.push(indice);
+                        let ind = indices.last().unwrap().as_slice();
+                        (vao, vbo, elem_buffer) = DriverValues::create_buffer_vec_tex(&mut driver, verts, ind);
+                    }
+                    else {
+                        let buffer = mesh_object.verts.clone();
+                        let temp = buffer.iter().map(|f| {
+                            let v = f.to_buffer();
+                            vec![
+                                v[0], 
+                                v[1], 
+                                v[2],
+                                ]
+                        }).collect::<Vec<Vec<f32>>>();
+                        let vertice = temp.iter().flatten().map(|v| v.clone()).collect::<Vec<f32>>();
+                        vertices.push(vertice);
+                        let verts = vertices.last().unwrap().as_slice();
+                        let indice = mesh_object.faces.iter().map(|v| [v.0 as u32, v.1 as u32, v.2 as u32]).collect::<Vec<[u32;3]>>().as_slice().concat();
+                        indices.push(indice);
+                        let ind = indices.last().unwrap().as_slice();
+                        (vao, vbo, elem_buffer) = DriverValues::create_buffer_vec(&mut driver, verts, ind);
+                    }
+                }
+
+                let shader_name = mesh_object.material.shader.shader_name.clone();
+
+                let sh = DriverValues::register_shader(&mut driver, shader_name, mesh_object.material.shader.clone());
+                let (name, vertex_shader, fragment_shader) = &driver.shader_stages[sh];
+
+                let gl = driver.gl.as_ref().unwrap();
+
+                shader_program = gl.CreateProgram();
+                gl.AttachShader(shader_program, *vertex_shader);
+                gl.AttachShader(shader_program, *fragment_shader);
+                gl.LinkProgram(shader_program);
+                vao_vec.push(vao);
+                vbo_vec.push(vbo);
+                elem_buff_vec.push(elem_buffer);
+                shader_progs.push(shader_program);
+            }
+        }
+        drop(mesh);
+        Self { 
+            p_mesh: p_mesh.clone(), 
+            vao: Arc::new(Mutex::new(vao_vec)), 
+            vbo: Arc::new(Mutex::new(vbo_vec)), 
+            elem_buffer: Arc::new(Mutex::new(elem_buff_vec)), 
+            shader_programs: Arc::new(Mutex::new(shader_progs)),
+            vertices: Arc::new(Mutex::new(vertices)),
+            indices: Arc::new(Mutex::new(indices)),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct CameraDriver {
+    camera: Arc<Mutex<Camera>>,
+
+}
+
+
+impl CameraDriver {
+    pub fn lock(&self) -> parking_lot::MutexGuard<Camera>
+    {
+        self.camera.lock()
+    }
+
+    pub fn new(p_camera: Arc<Mutex<Camera>>) -> Self {
+        Self { camera: p_camera.clone() }
+    }
+}
+
 pub struct DriverValues {
     pub gl_context: Option<SdlGlContext>,
     pub shader_stages: Vec<(String, u32, u32)>,
     pub gl: Option<GlFns>,
-    pub elem_buffer: u32,
-    pub vao: u32,
-    pub vbo: u32,
-    pub frame_buffer: u32,
-    pub shader_program: u32,
     
 }
 
@@ -61,18 +671,7 @@ impl OGlRender for Pipeline {
             let gl = driver.gl.as_ref().unwrap();
             // this is just to ensure if we need things done before the render loop, it is done here
             // itterate through shader folder and find shaders that are needed to be compiled
-            
-            gl.GenVertexArrays(1, &mut driver.vao);
-            assert_ne!(driver.vao, 0);
 
-            gl.GenBuffers(1, &mut driver.vbo);
-            gl.GenBuffers(1, &mut driver.elem_buffer);
-            assert_ne!(driver.vbo, 0);
-            assert_ne!(driver.elem_buffer, 0);
-            driver.shader_program = gl.CreateProgram();
-
-            drop(gl);
-            drop(driver);
             drop(p_driver);
             pipeline.is_init = true;
         }
@@ -83,13 +682,14 @@ impl OGlRender for Pipeline {
         unsafe {
             
             let mut pipeline = th.lock();
+            let cameras = pipeline.cameras.clone();
             let mut p_driver = pipeline.driver.lock();
             let driver = p_driver.as_mut().unwrap();
-            let mut vao = driver.vao;
-            let mut elem_buffer = driver.elem_buffer;
-            driver.gl.as_ref().unwrap().Clear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-            for p_camera in &pipeline.cameras{
+            for p_camera in &cameras{
+    
+                driver.gl.as_ref().unwrap().Clear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
                 let camera = p_camera.lock();
+                let mut render_line = Vec::<(u32, u32, u32, u32, Matrix34, u32, u32, HashMap<std::string::String, (Box<materials::ShaderType>, ShaderDataHint)>, usize)>::new();
                 if camera.render_texture.is_some() {
                     driver.gl.as_ref().unwrap().BindFramebuffer(GL_FRAMEBUFFER, camera.render_texture.as_ref().unwrap().inner);
                     driver.gl.as_ref().unwrap().Viewport(0,0, camera.render_texture.as_ref().unwrap().width, camera.render_texture.as_ref().unwrap().height);
@@ -99,244 +699,22 @@ impl OGlRender for Pipeline {
                     driver.gl.as_ref().unwrap().Viewport(0, 0, GAME.window_x as i32, GAME.window_y as i32);
                 }
                 // println!("{}", pipeline.meshs.len());
-                for p_mesh in &pipeline.meshs {
-                    let mut mesh = p_mesh.lock();
+                
+                
+                    let gl = driver.gl.as_ref().unwrap();
+                    gl.Enable(GL_DEPTH_TEST);
                     
-                    // println!("{}", (camera.projection * camera.transform * mesh.transform * Vec4::new(50.0, 50.0, 0.0, 0.0)));
+                    gl.DepthMask(GL_FALSE.0 as u8);
+                    gl.DepthFunc(GL_ALWAYS);
+                    // add other bufferes
+                    // just for now we are going to add a vert output and frag output buffer
                     
-                    for p_mesh_object in &mesh.meshes {
-                        let mesh_object = p_mesh_object.lock();
-                        // for vert in &mesh_object.verts {
-                        //     println!("{}", (camera.projection * camera.transform * mesh.transform * Vec4::new(vert.x, vert.y, vert.z, 1.0)));
-                        // }
-                        if !mesh_object.normals.is_empty() {
-                            if !mesh_object.texture_coord.is_empty(){
-                                let mut buffer = Vec::<(Vec3, Vec3, (f32, f32))>::new();
-                                for i in 0..mesh_object.verts.len() {
-                                    let vert = mesh_object.verts[i];
-                                    let norm = mesh_object.normals.iter().find(|v| v.0 == i as i16).unwrap();
-                                    let texcoord = mesh_object.texture_coord.iter().find(|v| v.0 == i as i16).unwrap();
-                                    buffer.push((vert.clone(), norm.1.clone(), texcoord.1.clone()));
-                                }
-                                DriverValues::create_buffer_vec_norm_tex(driver, &buffer, &mesh_object.faces, camera.up, camera.forward);
-                            }
-                            else{
-                                let mut buffer = Vec::<(Vec3, Vec3)>::new();
-                                for i in 0..mesh_object.verts.len() {
-                                    let vert = mesh_object.verts[i];
-                                    let norm = mesh_object.normals.iter().find(|v| v.0 == i as i16).unwrap();
-                                    buffer.push((vert.clone(), norm.1.clone()));
-                                }
-                                DriverValues::create_buffer_vec_norm(driver, &buffer, &mesh_object.faces, camera.up, camera.forward);
-                            }
-                        }
-                        else {
-                            if !mesh_object.texture_coord.is_empty() {
-                                let mut buffer = Vec::<(Vec3, (f32, f32))>::new();
-                                for i in 0..mesh_object.verts.len() {
-                                    let vert = mesh_object.verts[i];
-                                    let texcoord = mesh_object.texture_coord.iter().find(|v| v.0 == i as i16).unwrap();
-                                    buffer.push((vert.clone(), texcoord.1.clone()));
-                                }
-                                DriverValues::create_buffer_vec_tex(driver, &buffer, &mesh_object.faces, camera.up, camera.forward);
-                            }
-                            else {
-                                let buffer = mesh_object.verts.clone();
-                                DriverValues::create_buffer_vec(driver, &buffer, &mesh_object.faces, camera.up, camera.forward);
-                            }
-                        }
-                        
-                        let shader_name = mesh_object.material.shader.shader_name.clone();
-
-                        let sh = DriverValues::register_shader(driver, shader_name, mesh_object.material.shader.clone());
-                        let (name, vertex_shader, fragment_shader) = &driver.shader_stages[sh];
-                        //let (name, vertex_shader, fragment_shader) = driver.shader_stages.iter().find(|v| v.0 == shader_name).expect(("Shader Compilation Error!!! Shader is missing or not compiled properly!! shader_name:".to_owned() + shader_name.as_str()).as_str());
-                        
+                    for mesh in &mut pipeline.meshs.to_vec(){
+                        mesh.update_mesh(driver, &camera);
                         let gl = driver.gl.as_ref().unwrap();
-                        let shader_program = driver.shader_program;
-                        gl.AttachShader(shader_program, *vertex_shader);
-                        gl.AttachShader(shader_program, *fragment_shader);
-                        gl.LinkProgram(shader_program);
-
-                        // add other bufferes
-                        // just for now we are going to add a vert output and frag output buffer
-                        gl.UseProgram(shader_program);
-                        let mut count = 0;
-                        gl.GetProgramiv(shader_program, GL_ACTIVE_UNIFORMS, &mut count);
-                        for i in 0..count {
-                            let mut length = 0;
-                            let mut size = 0;
-                            let mut type_ = std::mem::zeroed();
-                            let mut name: [u8; 16] = std::mem::zeroed();
-                            gl.GetActiveUniform(shader_program, i as u32, 16, &mut length, &mut size, &mut type_, name.as_mut_ptr());
-
-                            let nn = &std::str::from_utf8(name.as_slice()).unwrap()[..length as usize];
-                            
-                            match nn {
-
-                                "_p" => {
-                                    // model view projection
-                                    
-                                    let right = camera.up.cross(camera.forward);
-                                    let mut p = camera.projection;
-                                    // p.x = camera.projection.x * right.x + camera.projection.y * right.y + camera.projection.z * right.z;
-                                    // p.y = camera.projection.x * camera.up.x + camera.projection.y * camera.up.y + camera.projection.z * camera.up.z;
-                                    // p.z = camera.projection.x * camera.forward.x + camera.projection.y * camera.forward.y + camera.projection.z * camera.forward.z;
-
-                                    // println!("{:?}", mvp.to_buffer());
-                                    gl.ProgramUniformMatrix4fv(shader_program, i, 1, GL_FALSE.0 as u8, p.to_buffer().as_ptr());
-                                },
-                                "_mvp" => {
-                                    // model view projection
-
-                                    let right = camera.up.cross(camera.forward);
-                                    
-                                    let mut proj = camera.projection;
-                                    // proj.x = camera.projection.x * right.x + camera.projection.y * right.y + camera.projection.z * right.z;
-                                    // proj.y = camera.projection.x * camera.up.x + camera.projection.y * camera.up.y + camera.projection.z * camera.up.z;
-                                    // proj.z = camera.projection.x * camera.forward.x + camera.projection.y * camera.forward.y + camera.projection.z * camera.forward.z;
-
-                                    let mut mesh_mat = mesh.transform;
-                                    // mesh_mat.x = mesh.transform.x * right.x + mesh.transform.y * right.y + mesh.transform.z * right.z;
-                                    // mesh_mat.y = mesh.transform.x * camera.up.x + mesh.transform.y * camera.up.y + mesh.transform.z * camera.up.z;
-                                    // mesh_mat.z = mesh.transform.x * camera.forward.x + mesh.transform.y * camera.forward.y + mesh.transform.z * camera.forward.z;
-                                    
-                                    let mvp = proj * camera.transform * mesh_mat;
-                                    // println!("{:?}", mvp.to_buffer());
-                                    gl.ProgramUniformMatrix4fv(shader_program, i, 1, GL_FALSE.0 as u8, mvp.to_buffer().as_ptr());
-                                },
-                                "_m" => {
-                                    // model view
-                                    let right = camera.up.cross(camera.forward);
-                                    let mut m = mesh.transform;
-                                    
-                                    // m.x = mesh.transform.x * right.x + mesh.transform.y * right.y + mesh.transform.z * right.z;
-                                    // m.y = mesh.transform.x * camera.up.x + mesh.transform.y * camera.up.y + mesh.transform.z * camera.up.z;
-                                    // m.z = mesh.transform.x * camera.forward.x + mesh.transform.y * camera.forward.y + mesh.transform.z * camera.forward.z;
-                                    // println!("{}", m);
-                                    // println!("{}", mv);
-                                    gl.ProgramUniformMatrix4fv(shader_program, i, 1, GL_FALSE.0 as u8, m.to_buffer44().as_ptr());
-                                }
-                                "_v" => {
-                                    // model view
-                                    let v = camera.transform;
-                                    // println!("{}", v);
-                                    gl.ProgramUniformMatrix4fv(shader_program, i, 1, GL_FALSE.0 as u8, v.to_buffer44().as_ptr());
-                                }
-                                "_norm" => {
-                                    // rotation of model view
-                                    let right = camera.up.cross(camera.forward);
-                                    
-                                    let mut m = mesh.transform;
-                                    // m.x = mesh.transform.x * right.x + mesh.transform.y * right.y + mesh.transform.x * right.z;
-                                    // m.y = mesh.transform.x * camera.up.x + mesh.transform.y * camera.up.y + mesh.transform.z * camera.up.z;
-                                    // m.z = mesh.transform.x * camera.forward.x + mesh.transform.y * camera.forward.y + mesh.transform.z * camera.forward.z;
-
-                                    let mv = camera.transform * m;
-                                    let q = mv.get_rotation();
-                                    let norm = q.to_mat33();
-                                    gl.ProgramUniformMatrix3fv(shader_program, i, 1, GL_FALSE.0 as u8, norm.to_buffer().as_ptr());
-                                }
-                                "nemissa" => {
-                                    let file = image::open(APP_DIR.to_owned() + "\\assets\\images\\nemissa_hitomi.png").unwrap();
-                                    let mut texture = 0;
-                                    gl.GenTextures(1, &mut texture);
-                                    gl.BindTexture(GL_TEXTURE_2D, texture);
-                                    gl.TexImage2D(GL_TEXTURE_2D, 0, GL_RGB.0 as i32, file.width() as i32, file.height() as i32, 0, GL_RGB, GL_UNSIGNED_BYTE, file.as_bytes().as_ptr().cast());
-                                    
-                                }
-                                _ => {
-                                    // try to get value similar to it in the shader uniforms!!
-                                    let uniform = mesh_object.material.shader_descriptor.iter().find(|v| v.0.eq(nn)).expect(("Failed to find uniform. Maybe something went wrong in the Material creation process?? uniform:".to_owned() + format!("{nn}").as_str()).as_str());
-                                    let uniform_value = uniform.1.0.clone();
-
-                                    match *uniform_value {
-                                        materials::ShaderType::Integer(v) => {
-                                            gl.ProgramUniform1i(shader_program, i, v);
-                                            
-                                        },
-                                        materials::ShaderType::Boolean(v) => {
-                                            gl.ProgramUniform1i(shader_program, i, v as i32);
-                                        },
-                                        materials::ShaderType::UnsignedInteger(v) => {
-                                            gl.ProgramUniform1ui(shader_program, i, v);
-                                        },
-                                        materials::ShaderType::Float(v) => {
-                                            gl.ProgramUniform1f(shader_program, i, v);
-                                        },
-                                        materials::ShaderType::Double(v) => {
-                                            gl.ProgramUniform1d(shader_program, i, v);
-                                        },
-                                        materials::ShaderType::Vec3(v) => {
-                                            gl.ProgramUniform3fv(shader_program, i, 1, v.as_ptr());
-                                        },
-                                        materials::ShaderType::Vec4(v) => {
-                                            gl.ProgramUniform4fv(shader_program, i, 1, v.as_ptr());
-                                        },
-                                        materials::ShaderType::Vec2(v) => {
-                                            gl.ProgramUniform2fv(shader_program, i, 1, v.as_ptr());
-                                        },
-                                        materials::ShaderType::IVec3(v) => {
-                                            gl.ProgramUniform3iv(shader_program, i, 1, v.as_ptr());
-                                        },
-                                        materials::ShaderType::IVec4(v) => {
-                                            gl.ProgramUniform4iv(shader_program, i, 1, v.as_ptr());
-                                        },
-                                        materials::ShaderType::IVec2(v) => {
-                                            gl.ProgramUniform3iv(shader_program, i, 1, v.as_ptr());
-                                        },
-                                        materials::ShaderType::UVec3(v) => {
-                                            gl.ProgramUniform3uiv(shader_program, i, 1, v.as_ptr());
-                                        },
-                                        materials::ShaderType::UVec4(v) => {
-                                            gl.ProgramUniform4uiv(shader_program, i, 1, v.as_ptr());
-                                        },
-                                        materials::ShaderType::UVec2(v) => {
-                                            gl.ProgramUniform2uiv(shader_program, i, 1, v.as_ptr());
-                                        },
-                                        materials::ShaderType::DVec3(v) => {
-                                            gl.ProgramUniform3dv(shader_program, i, 1, v.as_ptr());
-                                        },
-                                        materials::ShaderType::DVec4(v) => {
-                                            gl.ProgramUniform3dv(shader_program, i, 1, v.as_ptr());
-                                        },
-                                        materials::ShaderType::DVec2(v) => {
-                                            gl.ProgramUniform3dv(shader_program, i, 1, v.as_ptr());
-                                        },
-                                        materials::ShaderType::Sampler2D(v, width, height) => {
-                                            
-                                        },
-                                    }
-                                }
-
-                            }
-                            
-                            
-                        }
-                        
-                        
-                        
-                        
-                        
-                        // gl.BindVertexArray(vao);
-                        // gl.DrawArrays(GL_TRIANGLES, 0, mesh_object.verts.len() as i32);
-                        gl.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, elem_buffer);
-                        gl.DrawElements(GL_TRIANGLES, (mesh_object.faces.len() * 3) as i32, GL_UNSIGNED_INT, 0 as *const _);
-                        // let mut size = 0;
-                        // gl.GetBufferParameteriv(GL_ARRAY_BUFFER, GL_BUFFER_SIZE, &mut size);
-                        // let data = std::slice::from_raw_parts_mut(gl.MapBuffer(GL_ARRAY_BUFFER, GL_READ_ONLY).cast::<f32>(), size as usize);
-                        // println!("{:?}", data);
-                        gl.DetachShader(shader_program, *vertex_shader);
-                        gl.DetachShader(shader_program, *fragment_shader);
-
-                        gl.DeleteBuffers(1, &driver.elem_buffer);
-                        gl.DeleteBuffers(1, &driver.vbo);
-                        gl.DeleteFramebuffers(1, &driver.frame_buffer);
-                        gl.DeleteVertexArrays(1, &driver.vao);
-
-                        gl.DeleteProgram(shader_program);
+                        mesh.draw(gl, &camera);
                     }
-                }
+                
                 GAME.window.gl_swap_window();
             }
         }
@@ -350,11 +728,6 @@ impl Default for DriverValues {
             gl_context: None,
             shader_stages: Vec::new(),
             gl: None,
-            vao: 0,
-            vbo: 0,
-            elem_buffer: 0,
-            frame_buffer: 0,
-            shader_program: 0,
         }
     }
 }
@@ -460,28 +833,32 @@ impl DriverValues {
         PipelineValues {  }
     }
 
-    pub unsafe fn create_buffer_vec_norm_tex(this: &mut Self, vertices: &Vec<(Vec3, Vec3, (f32, f32))>, indices: &Vec<(i16, i16, i16)>, up: Vec3, forward: Vec3) {
+    pub unsafe fn create_buffer_vec_norm_tex(this: &mut Self, verts: &[f32], indices: &[u32]) -> (u32, u32, u32){
         let gl = this.gl.as_ref().unwrap();
 
-        gl.BindVertexArray(this.vao);
-        let right = up.cross(forward);
+        let mut vao = {
+                let mut v = 0;
+                gl.CreateVertexArrays(1, &mut v);
+                assert_ne!(v, 0);
+                v
+        };
+        let mut vbo = {
+                let mut v = 0;
+                gl.GenBuffers(1, &mut v);
+                assert_ne!(v, 0);
+                v
+        };
+        let mut elem_buffer = {
+                let mut v = 0;
+                gl.GenBuffers(1, &mut v);
+                assert_ne!(v, 0);
+                v
+        };
 
-        gl.BindBuffer(GL_ARRAY_BUFFER, this.vbo);
-        let temp = vertices.iter().map(|f| {
-            let v = f.0.to_buffer();
-            let n = f.1.to_buffer();
-            [
-                v[0] * right.x + v[1] * right.y + v[2] * right.z, 
-                v[0] * up.x + v[1] * up.y + v[2] * up.z, 
-                v[0] * forward.x + v[1] * forward.y + v[2] * forward.z, 
-                n[0], 
-                n[1], 
-                n[2], 
-                f.2.0, 
-                f.2.1
-                ]
-        }).collect::<Vec<[f32; 8]>>();
-        let verts = temp.as_slice();
+        gl.BindVertexArray(vao);
+
+
+        gl.BindBuffer(GL_ARRAY_BUFFER, vbo);
         
         gl.BufferData(GL_ARRAY_BUFFER, size_of_val(verts) as isize, verts.as_ptr().cast(), GL_STATIC_DRAW);
         gl.VertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE.0 as u8, 8 * size_of::<f32>() as i32, 0 as *const _);
@@ -491,37 +868,41 @@ impl DriverValues {
         gl.VertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE.0 as u8, (8 * size_of::<f32>()) as i32, (6 * size_of::<f32>()) as *const _);
         gl.EnableVertexAttribArray(2);
 
-        let ind = indices.iter().map(|v| [v.0 as u32, v.1 as u32, v.2 as u32]).collect::<Vec<[u32;3]>>().as_slice().concat();
 
 
-        gl.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, this.elem_buffer);
-        gl.BufferData(GL_ELEMENT_ARRAY_BUFFER, (ind.len() * size_of::<f32>()) as isize, ind.as_ptr().cast(), GL_STATIC_DRAW);
+        gl.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, elem_buffer);
+        gl.BufferData(GL_ELEMENT_ARRAY_BUFFER, (indices.len() * size_of::<f32>()) as isize, indices.as_ptr().cast(), GL_STATIC_DRAW);
 
-
+        (vao, vbo, elem_buffer)
         
     }
 
-    pub unsafe fn create_buffer_vec_norm(this: &mut Self, vertices: &Vec<(Vec3, Vec3)>, indices: &Vec<(i16, i16, i16)>, up: Vec3, forward: Vec3) {
+    pub unsafe fn create_buffer_vec_norm(this: &mut Self, verts: &[f32], indices: &[u32]) -> (u32, u32, u32){
         let gl = this.gl.as_ref().unwrap();
 
-        gl.BindVertexArray(this.vao);
+        let mut vao = {
+            let mut v = 0;
+            gl.CreateVertexArrays(1, &mut v);
+            assert_ne!(v, 0);
+            v
+    };
+    let mut vbo = {
+            let mut v = 0;
+            gl.GenBuffers(1, &mut v);
+            assert_ne!(v, 0);
+            v
+    };
+    let mut elem_buffer = {
+            let mut v = 0;
+            gl.GenBuffers(1, &mut v);
+            assert_ne!(v, 0);
+            v
+    };
 
-        let right = up.cross(forward);
+        gl.BindVertexArray(vao);
 
-        gl.BindBuffer(GL_ARRAY_BUFFER, this.vbo);
-        let temp = vertices.iter().map(|f| {
-            let v = f.0.to_buffer();
-            let n = f.1.to_buffer();
-            [
-                v[0] * right.x + v[1] * right.y + v[2] * right.z, 
-                v[0] * up.x + v[1] * up.y + v[2] * up.z, 
-                v[0] * forward.x + v[1] * forward.y + v[2] * forward.z, 
-                n[0], 
-                n[1], 
-                n[2]
-                ]
-        }).collect::<Vec<[f32; 6]>>();
-        let verts = temp.as_slice();
+
+        gl.BindBuffer(GL_ARRAY_BUFFER, vbo);
 
         gl.BufferData(GL_ARRAY_BUFFER, size_of_val(verts) as isize, verts.as_ptr().cast(), GL_STATIC_DRAW);
         gl.VertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE.0 as u8, 6 * size_of::<f32>() as i32, 0 as *const _);
@@ -529,34 +910,37 @@ impl DriverValues {
         gl.VertexAttribPointer(1, 3, GL_FLOAT, GL_TRUE.0 as u8, (6 * size_of::<f32>()) as i32, (3 * size_of::<f32>()) as *const _);
         gl.EnableVertexAttribArray(1);
 
-        let ind = indices.iter().map(|v| [v.0, v.1, v.2]).collect::<Vec<[i16;3]>>().as_slice().concat();
 
+        gl.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, elem_buffer);
+        gl.BufferData(GL_ELEMENT_ARRAY_BUFFER, (indices.len() * size_of::<f32>()) as isize, indices.as_ptr().cast(), GL_STATIC_DRAW);
 
-        gl.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, this.elem_buffer);
-        gl.BufferData(GL_ELEMENT_ARRAY_BUFFER, (ind.len() * size_of::<f32>()) as isize, ind.as_ptr().cast(), GL_STATIC_DRAW);
-
-
+        (vao, vbo, elem_buffer)
     }
 
-    pub unsafe fn create_buffer_vec_tex(this: &mut Self, vertices: &Vec<(Vec3, (f32, f32))>, indices: &Vec<(i16, i16, i16)>, up: Vec3, forward: Vec3) {
+    pub unsafe fn create_buffer_vec_tex(this: &mut Self, verts: &[f32], indices: &[u32]) -> (u32, u32, u32){
         let gl = this.gl.as_ref().unwrap();
 
+        let mut vao = {
+            let mut v = 0;
+            gl.CreateVertexArrays(1, &mut v);
+            assert_ne!(v, 0);
+            v
+    };
+    let mut vbo = {
+            let mut v = 0;
+            gl.GenBuffers(1, &mut v);
+            assert_ne!(v, 0);
+            v
+    };
+    let mut elem_buffer = {
+            let mut v = 0;
+            gl.GenBuffers(1, &mut v);
+            assert_ne!(v, 0);
+            v
+    };
 
-        gl.BindVertexArray(this.vao);
-        let right = up.cross(forward);
+        gl.BindVertexArray(vao);
 
-        gl.BindBuffer(GL_ARRAY_BUFFER, this.vbo);
-        let temp = vertices.iter().map(|f| {
-            let v = f.0.to_buffer();
-            [
-                v[0] * right.x + v[1] * right.y + v[2] * right.z, 
-                v[0] * up.x + v[1] * up.y + v[2] * up.z, 
-                v[0] * forward.x + v[1] * forward.y + v[2] * forward.z,  
-                f.1.0, 
-                f.1.1
-            ]
-        }).collect::<Vec<[f32; 5]>>();
-        let verts = temp.as_slice();
 
         gl.BufferData(GL_ARRAY_BUFFER, size_of_val(verts) as isize, verts.as_ptr().cast(), GL_STATIC_DRAW);
         gl.VertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE.0 as u8, 5 * size_of::<f32>() as i32, 0 as *const _);
@@ -564,43 +948,48 @@ impl DriverValues {
         gl.VertexAttribPointer(2, 2, GL_FLOAT, GL_TRUE.0 as u8, (5 * size_of::<f32>()) as i32, (3 * size_of::<f32>()) as *const _);
         gl.EnableVertexAttribArray(2);
 
-        let ind = indices.iter().map(|v| [v.0, v.1, v.2]).collect::<Vec<[i16;3]>>().as_slice().concat();
 
-        gl.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, this.elem_buffer);
-        gl.BufferData(GL_ELEMENT_ARRAY_BUFFER, (ind.len() * size_of::<f32>()) as isize, ind.as_ptr().cast(), GL_STATIC_DRAW);
+        gl.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, elem_buffer);
+        gl.BufferData(GL_ELEMENT_ARRAY_BUFFER, (indices.len() * size_of::<f32>()) as isize, indices.as_ptr().cast(), GL_STATIC_DRAW);
 
-        
+        (vao, vbo, elem_buffer)
     }
 
-    pub unsafe fn create_buffer_vec(this: &mut Self, vertices: &Vec<Vec3>, indices: &Vec<(i16, i16, i16)>, up: Vec3, forward: Vec3) {
+    pub unsafe fn create_buffer_vec(this: &mut Self, verts: &[f32], indices: &[u32]) -> (u32, u32, u32){
         let gl = this.gl.as_ref().unwrap();
 
+        let mut vao = {
+            let mut v = 0;
+            gl.CreateVertexArrays(1, &mut v);
+            assert_ne!(v, 0);
+            v
+    };
+    let mut vbo = {
+            let mut v = 0;
+            gl.GenBuffers(1, &mut v);
+            assert_ne!(v, 0);
+            v
+    };
+    let mut elem_buffer = {
+            let mut v = 0;
+            gl.GenBuffers(1, &mut v);
+            assert_ne!(v, 0);
+            v
+    };
 
-        gl.BindVertexArray(this.vao);
-        let right = up.cross(forward);
+        gl.BindVertexArray(vao);
 
-
-        gl.BindBuffer(GL_ARRAY_BUFFER, this.vbo);
-        let temp = vertices.iter().map(|f| {
-            let v = f.to_buffer();
-            [
-                v[0] * right.x + v[1] * right.y + v[2] * right.z, 
-                v[0] * up.x + v[1] * up.y + v[2] * up.z, 
-                v[0] * forward.x + v[1] * forward.y + v[2] * forward.z, 
-            ]
-        }).collect::<Vec<[f32; 3]>>();
-        let verts = temp.as_slice();
 
         gl.BufferData(GL_ARRAY_BUFFER, size_of_val(verts) as isize, verts.as_ptr().cast(), GL_STATIC_DRAW);
         gl.VertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE.0 as u8, 3 * size_of::<f32>() as i32, 0 as *const _);
         gl.EnableVertexAttribArray(0);
 
-        let ind = indices.iter().map(|v| [v.0, v.1, v.2]).collect::<Vec<[i16;3]>>().as_slice().concat();
+
+        gl.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, elem_buffer);
+        gl.BufferData(GL_ELEMENT_ARRAY_BUFFER, (indices.len() * size_of::<f32>()) as isize, indices.as_ptr().cast(), GL_STATIC_DRAW);
 
 
-        gl.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, this.elem_buffer);
-        gl.BufferData(GL_ELEMENT_ARRAY_BUFFER, (ind.len() * size_of::<f32>()) as isize, ind.as_ptr().cast(), GL_STATIC_DRAW);
-
+        (vao, vbo, elem_buffer)
     }
 }
 

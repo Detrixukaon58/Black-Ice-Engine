@@ -3,7 +3,6 @@
 
 use crate::common::{components::{component_system::*, entity::entity_system::*}, *, filesystem::files::*, vertex::*};
 
-use serde::*;
 
 
 pub struct Image {

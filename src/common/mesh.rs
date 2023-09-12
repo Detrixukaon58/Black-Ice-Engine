@@ -49,7 +49,7 @@ impl Mesh {
 
     pub fn square(&mut self) {
         let mut mesh_object = MeshObject::new("square".to_string());
-        let v = 100.0;
+        let v = 5.0;
         mesh_object.define_point(Vec3::new(-v, -v, 0.0));
         mesh_object.define_point(Vec3::new(v, -v, 0.0));
         mesh_object.define_point(Vec3::new(v, v, 0.0));

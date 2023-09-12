@@ -8,7 +8,6 @@ use crate::common::{engine::gamesys::*, components::entity::*, vertex::*, matric
 use super::entity::entity_system::*;
 use parking_lot::*;
 use crate::common::angles::{Ang3, Quat};
-use serde::*;
 
 
 pub struct ComponentSystem {
@@ -73,7 +72,7 @@ impl ReflectionValueBuilder {
 }
 
 impl Display for Value {
-    fn fmt(&self, f: &mut __private::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Null => writeln!(f, ""),
             Self::Ang3(ypr) => writeln!(f, "Ang3({y},{p},{r})", y = ypr.y, p = ypr.p, r = ypr.r),

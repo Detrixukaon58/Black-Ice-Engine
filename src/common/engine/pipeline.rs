@@ -10,8 +10,6 @@ use parking_lot::*;
 use std::sync::atomic::AtomicI32;
 use std::future::*;
 use sdl2::*;
-use async_trait::*;
-use winit::dpi::Pixel;
 use colored::*;
 
 extern crate raw_window_handle;
@@ -32,11 +30,12 @@ use super::threading::*;
 pub struct Pipeline {
     pub id: i32,
     pub name: String,
-    pub meshs: Vec<Arc<Mutex<Mesh>>>,
-    pub cameras: Vec<Arc<Mutex<Camera>>>,
+    pub meshs: Vec<MeshDriver>,
+    pub cameras: Vec<CameraDriver>,
     pub layer: u32,
     pub driver: Arc<Mutex<Option<DriverValues>>>,
-    pub is_init: bool
+    pub is_init: bool,
+    counter: AtomicI32,
 }
 
 #[derive(Clone)]
@@ -49,11 +48,12 @@ unsafe impl Send for Pipeline {}
 
 impl Pipeline {
     pub fn register_mesh(&mut self, p_mesh: Arc<Mutex<Mesh>>){
-        self.meshs.push(p_mesh.clone());
+        
+        self.meshs.push(MeshDriver::new(self.driver.clone(), p_mesh.clone()));
     }
 
     pub fn register_camera(&mut self, p_camera: Arc<Mutex<Camera>>){
-        self.cameras.push(p_camera.clone());
+        self.cameras.push(CameraDriver::new(p_camera.clone()));
     }
 }
 
@@ -113,7 +113,8 @@ impl RenderPipelineSystem{
             layer: params.layer,
             driver: this.driver_vals.clone(),
             cameras: Vec::new(),
-            is_init: false
+            is_init: false,
+            counter: AtomicI32::new(0)
         }));
         
         this.pipelines.push(p);
@@ -145,7 +146,7 @@ impl RenderPipelineSystem{
         for p in &self.pipelines {
             let mut pipeline = p.lock();
             if pipeline.layer == layer {
-                pipeline.cameras.push(p_cam.clone());
+                pipeline.register_camera(p_cam.clone());
             }
         }
 
@@ -371,12 +372,12 @@ impl RenderPipelineSystem{
                 },
                 imagine::png::PngChunk::PLTE(plte) => {
                     for d in plte.entries() {
-                        pallete.push(Vec4::new(d[0].cast(), d[1].cast(), d[2].cast(), 0));
+                        pallete.push(Vec4::new(d[0] as f32, d[1] as f32, d[2] as f32, 0.0));
                     }
                 },
                 imagine::png::PngChunk::tRNS(trns) => {
                     for (a, c) in trns.to_alphas().iter().zip(pallete.iter_mut()) {
-                        c.w = a.cast();
+                        c.w = *a as f32;
                     }
                 },
                 imagine::png::PngChunk::IDAT(idat) => {
