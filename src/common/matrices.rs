@@ -1,3 +1,6 @@
+#![allow(unused)]
+
+
 use crate::common::{ vertex::*, New, angles::*};
 use std::{*, fmt::Display};
 

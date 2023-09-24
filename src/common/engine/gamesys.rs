@@ -7,6 +7,7 @@ use std::string;
 use crate::common;
 use crate::common::angles::*;
 use crate::common::components::component_system::Constructor;
+use crate::common::engine::event_system::EventSystem;
 use crate::common::matrices::{M34, QuatToMat33};
 use crate::common::vertex::{V3New, V3Meth};
 use crate::common::{*, mesh::Mesh, components::{component_system::*, entity::{entity_system::*, *}}};
@@ -17,8 +18,10 @@ use futures::join;
 use sdl2::*;
 
 use once_cell::sync::Lazy;
-use crate::common::engine::pipeline::*;
+use crate::common::engine::{pipeline::*, input, event_system};
 #[cfg(feature = "vulkan")] use ash::*;
+
+use super::input::InputSystem;
 pub trait BaseToAny: 'static {
     fn as_any(&self) -> &dyn Any;
 }
@@ -181,10 +184,12 @@ pub enum StatusCode{
     INITIALIZE,
 }
 
+#[derive(Clone)]
 pub struct Avg<T> {
     inner: Vec<T>,
     init: f32
 }
+
 
 impl Avg<f32> {
     pub fn push(&mut self, value: f32)
@@ -223,7 +228,7 @@ impl Avg<f32> {
         }
     }
 
-    pub fn get_position(&mut self) -> f32 
+    pub fn get_position(&self) -> f32 
     {
         self.init
     }
@@ -240,30 +245,33 @@ pub struct Game {
     pub REGISTRAR: components::component_system::ComponentRef<Registry>,
     RENDER_SYS: Arc<RwLock<RenderPipelineSystem>>,
     ENTITY_SYS: components::component_system::ComponentRef<EntitySystem>,
+    INPUT_SYS: Arc<Mutex<InputSystem>>,
+    EVENT_SYS: Arc<Mutex<EventSystem>>,
     pub STATUS: Arc<Mutex<StatusCode>>,
     pub sdl: sdl2::Sdl,
-    pub window: sdl2::video::Window,
-    pub video: sdl2::VideoSubsystem,
     pub mouse: sdl2::mouse::MouseUtil,
     pub keyboard: sdl2::keyboard::KeyboardUtil,
-    pub event_pump: Option<sdl2::EventPump>,
     pub window_x: u32,
     pub window_y: u32,
     show_cursor: bool,
-    pub cursor_x: Avg<f32>,
-    pub cursor_y: Avg<f32>
 }
 
 impl Game {
     pub unsafe fn isExit() -> bool {
-        *GAME.STATUS.lock() == StatusCode::CLOSE
+        'run: loop {
+            let status = match GAME.STATUS.try_lock() {
+                Some(v) => v,
+                None => continue 'run
+            };
+            return *status == StatusCode::CLOSE;
+        }
     }
 
     pub fn new() -> Game{
         let reg = components::component_system::ComponentRef_new(Registry {reg: Lazy::new(
             || {HashMap::<Box<&str>,Box<Register>>::new()}
         )});
-        let render_sys = Arc::new(RwLock::new(RenderPipelineSystem::new()));
+        
 
         let sdl = init().expect("Failed to initialise SDL!!");
         let video = sdl.video().expect("Failed to get video.");
@@ -292,27 +300,23 @@ impl Game {
         mouse.show_cursor(false);
         mouse.capture(true);
         mouse.warp_mouse_in_window(&window, x as i32 / 2, y as i32 / 2);
-        let mut cursor_x = Avg::<f32>::new();
-        let mut cursor_y = Avg::<f32>::new();
-        cursor_x.push(x as f32 / 2.0);
-        cursor_y.push(y as f32 / 2.0);
+        let input_sys = Arc::new(Mutex::new(InputSystem::new(x / 2, y / 2)));
+        let event_system = Arc::new(Mutex::new(EventSystem::new()));
+        let render_sys = Arc::new(RwLock::new(RenderPipelineSystem::new(&sdl, video, window)));
         Game { 
             gameName: Arc::new(Mutex::new(String::from("Game Name"))), 
             REGISTRAR: reg, 
             RENDER_SYS: render_sys, 
             ENTITY_SYS: ent_sys,
+            INPUT_SYS: input_sys,
+            EVENT_SYS: event_system,
             STATUS: Arc::new(Mutex::new(StatusCode::INITIALIZE)),
             sdl: sdl,
-            window: window,
-            video: video,
             mouse: mouse,
             keyboard: keyboard,
-            event_pump: None,
             window_x: x,
             window_y: y,
             show_cursor: false,
-            cursor_x: cursor_x,
-            cursor_y: cursor_y,
         }
     }
 
@@ -321,13 +325,19 @@ impl Game {
 
         let runner = async{
 
-            self.event_pump = Some(self.sdl.event_pump().expect("Failed to load event pump!"));
+            
             let p_render_sys = self.RENDER_SYS.clone();
             let p_entity_sys = self.ENTITY_SYS.clone();
+            let p_input_sys = self.INPUT_SYS.clone();
+            let p_event_system = self.EVENT_SYS.clone();
+            let event_join_handdle = std::thread::Builder::new().name("Event".to_string()).spawn(|| {EventSystem::init(p_event_system)}).unwrap();
             let render_join_handle = std::thread::Builder::new().name(String::from("render")).spawn(|| {RenderPipelineSystem::init(p_render_sys)}).expect("Failed to create render thread!!");
             let entity_join_handle = std::thread::Builder::new().name(String::from("entity")).spawn(|| {EntitySystem::init(p_entity_sys)}).expect("Failed to start entity thread!!");
+            let input_join_handle = std::thread::Builder::new().name("Input".to_string()).spawn(|| {InputSystem::init(p_input_sys)}).unwrap();
             let p_ent_sys_2 = self.ENTITY_SYS.clone();
             let p_rend_sys_2 = self.RENDER_SYS.clone();
+            let p_input_sys_2 = self.INPUT_SYS.clone();
+            let p_event_sys_2 = self.EVENT_SYS.clone();
             let mut ent_sys_2 = p_ent_sys_2.lock();
             let mut entity_params = components::entity::entity_system::EntityParams {
                 position: vertex::Vec3::new(0, 0, 0),
@@ -375,118 +385,41 @@ impl Game {
                 v_p_mesh.push(p_mesh);
             }
             let mut cam = p_cam.lock();
+            let mut input = self.INPUT_SYS.lock();
 
             cam.set_position(Vec3::new(0.0, 0.0, 1.0));
             cam.set_rotation(Quat::euler(Ang3::new(
-                self.cursor_x.get_position() / 25.0, 
-                self.cursor_y.get_position() * self.cursor_x.get_position().cos() / 25.0,
-                self.cursor_y.get_position() * self.cursor_x.get_position().sin() / 25.0,
+                input.cursor_x.get_position() / 25.0, 
+                input.cursor_y.get_position() * input.cursor_x.get_position().cos() / 25.0,
+                input.cursor_y.get_position() * input.cursor_x.get_position().sin() / 25.0,
             )));
+            drop(input);
             // cam.set_rotation(Quat::euler(Ang3::new(0.0, 90.0, 0.0)));
             drop(cam);
             EntitySystem::start(p_ent_sys_2.clone());
             RenderPipelineSystem::start(p_rend_sys_2.clone());
+            InputSystem::start(p_input_sys_2.clone());
+            EventSystem::start(p_event_sys_2.clone());
 
             // here we loop for the events
             // let mut forward = Vec3::new(1.0, 0.0, 0.0);
-            'running: loop {
-                for event in self.event_pump.as_mut().unwrap().poll_iter() {
-                    match event {
-                        event::Event::Quit {..} =>  {
-                            unsafe{Game::set_status(StatusCode::CLOSE);}
-                            println!("Close sent");
-                            break 'running;
-                        }
-                        event::Event::Window { timestamp, window_id, win_event } => {
-                            match win_event {
-                                event::WindowEvent::Resized(x, y) => {
-                                    self.window_x = x as u32;
-                                    self.window_y = y as u32;
-                                }
-                                _ => {}
-                            }
-                        }
-                        event::Event::KeyDown { timestamp, window_id, keycode, scancode, keymod, repeat } => {
-                            if let Some(key) = keycode {
-                                use keyboard::Keycode::*;
-                                match key {
-                                    W => {
-
-                                        p_entity.translate(Vec3::new(10.0, 0.0, 0.0));
-
-                                    }
-                                    S => {
-
-                                        p_entity.translate(Vec3::new(-10.0, 0.0, 0.0));
-
-                                    }
-                                    A => {
-
-                                        p_entity.translate(Vec3::new(0.0, -10.0, 0.0));
-
-                                    }
-                                    D => {
-
-                                        p_entity.translate(Vec3::new(0.0, 10.0, 0.0));
-
-                                    }
-                                    Backquote => {
-                                        self.show_cursor = ! self.show_cursor;
-                                        self.mouse.capture(self.show_cursor);
-                                        self.mouse.show_cursor(self.show_cursor);
-                                        self.window.hide();
-                                        self.window.show();
-                                    }
-                                    Q => {
-                                        p_entity.translate(Vec3::new(0.0, 0.0, 10.0));
-                                    }
-                                    E => {
-                                        p_entity.translate(Vec3::new(0.0, 0.0, -10.0));
-                                    }
-                                    _ => {}
-                                }
-                            }
-                        }
-                        event::Event::MouseMotion { timestamp, window_id, which, mousestate, x, y, xrel, yrel } => {
-                            if !self.show_cursor{
-                                self.cursor_x.push(x as f32);
-                                self.cursor_y.push(y as f32);
-                                self.cursor_x.update();
-                                self.cursor_y.update();
-                                let mut new_x = x;
-                                let mut new_y = y;
-                                if x <= 1 {
-                                    new_x = self.window_x as i32 - 4;
-                                    self.mouse.warp_mouse_in_window(&self.window, new_x, new_y);
-                                    self.cursor_x.push(-new_x as f32);
-                                }
-                                if y <= 1 {
-                                    new_y = self.window_y as i32 - 4;
-                                    self.mouse.warp_mouse_in_window(&self.window, new_x, new_y);
-                                    self.cursor_y.push(-new_y as f32);
-                                }
-                                if x >= self.window_x as i32 - 1{
-                                    new_x = 4;
-                                    self.mouse.warp_mouse_in_window(&self.window, new_x, new_y);
-                                    self.cursor_x.push(-new_x as f32);
-                                }
-                                if y >= self.window_y as i32  - 1{
-                                    new_y = 4;
-                                    self.mouse.warp_mouse_in_window(&self.window, new_x, new_y);
-                                    self.cursor_y.push(-new_y as f32);
-                                }
-                                
-                            }
-                        }
-                        _ => continue
-                    }
+            loop{
+                if unsafe{Game::isExit()} {
+                    break;
                 }
+                let mut pp_event_pump = self.sdl.event_pump();
+                let mut p_event_pump = pp_event_pump.unwrap();
+                let mut event_pump = p_event_pump.poll_iter();
+                let mut events = event_pump.map(|f| Arc::new(f)).collect::<Vec<Arc<sdl2::event::Event>>>();
+                let mut event_sys = p_event_sys_2.lock();
+                event_sys.send_events(&mut events);
             }
 
-            self.window.hide();
+            
 
             render_join_handle.join();
             entity_join_handle.join();
+            input_join_handle.join();
             println!("Exiting Game!!");
         };
 
@@ -494,7 +427,7 @@ impl Game {
         
     }
 
-    unsafe fn set_status(status: StatusCode){
+    pub unsafe fn set_status(status: StatusCode){
         *GAME.STATUS.lock() = status.clone();
         let p_rend = Game::get_render_sys().clone();
         let p_ent = Game::get_entity_sys().clone();
@@ -509,12 +442,40 @@ impl Game {
         return;
     }
 
+    pub unsafe fn cursor_is_hidden() -> bool 
+    {
+        GAME.show_cursor
+    }
+
     pub unsafe fn get_render_sys() -> Arc<RwLock<RenderPipelineSystem>> {
         GAME.RENDER_SYS.clone()
     }
 
     pub unsafe fn get_entity_sys() -> components::component_system::ComponentRef<EntitySystem> {
         GAME.ENTITY_SYS.clone()
+    }
+
+    pub unsafe fn get_input_sys() -> Arc<Mutex<InputSystem>> {
+        GAME.INPUT_SYS.clone()
+    }
+
+    pub fn toggle_cursor_visibility()
+    {   
+        unsafe{
+            let show_cursor = !GAME.show_cursor;
+            println!("show_cursor: {}", show_cursor);
+            GAME.mouse.show_cursor(show_cursor);
+            GAME.mouse.capture(!show_cursor);
+            GAME.show_cursor = show_cursor;
+            let p_rend_sys = Game::get_render_sys();
+            let mut rend_sys = p_rend_sys.read();
+            let p_window = rend_sys.window.clone();
+            let mut window = p_window.lock();
+            drop(rend_sys);
+            window.hide();
+            std::thread::sleep(std::time::Duration::from_millis(1));
+            window.show();
+        }
     }
 
 }

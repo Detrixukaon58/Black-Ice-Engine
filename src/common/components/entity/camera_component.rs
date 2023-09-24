@@ -1,7 +1,7 @@
 #![allow(unused)]
 #![allow(non_snake_case)]
 
-use crate::common::{components::{component_system::*, entity::entity_system::*}, *, filesystem::files::*, vertex::*, matrices::*, engine::gamesys::*, angles::*, transform::Transform};
+use crate::common::{components::{component_system::*, entity::entity_system::*}, *, filesystem::files::*, vertex::*, matrices::*, engine::{gamesys::*, input::InputSystem}, angles::*, transform::Transform};
 
 
 pub struct CameraComponent {
@@ -42,12 +42,13 @@ impl BaseComponent for CameraComponent {
             EventFlag::UPDATE => {
 
                 //self.transform.rotate(Quat::euler(Ang3::new(1.0 * std::time::Duration::from_millis(16).as_secs_f32(), 0.0, 0.0)));
+                let (mut cursor_x, mut cursor_y) = InputSystem::get_cursor();
                 unsafe {
-                    // self.transform.set_rotation(Quat::euler(Ang3::new(
-                    //     GAME.cursor_x.get_position() / 25.0, 
-                    //     GAME.cursor_y.get_position() / 25.0,
-                    //     0.0,
-                    // )));
+                    self.transform.set_rotation(Quat::euler(Ang3::new(
+                        -cursor_x.get_position(), 
+                        -cursor_y.get_position() * (-cursor_x.get_position() % 360.0).to_radians().cos(),
+                        -cursor_y.get_position() * (-cursor_x.get_position() % 360.0).to_radians().sin(),
+                    )));
                     
                 }
                 self.look_at(

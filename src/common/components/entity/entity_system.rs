@@ -132,13 +132,12 @@ impl Entity {
             let mut avg = p_avg.lock();
             avg.push(1.0 / std::time::SystemTime::now().duration_since(count).unwrap().as_secs_f32());
             let average = avg.iter().sum::<f32>() / avg.len() as f32;
-            // println!("{}", average);
             if avg.len() > 60 {
                 avg.remove(0);
             }
             let time = std::time::Duration::from_millis(16).as_secs_f32() - avg.last().unwrap();
             std::thread::sleep(std::time::Duration::from_secs_f32(if time > 0.0 {time} else {0.0}));
-            let frame_time = avg.iter().sum::<f32>() / avg.len() as f32;
+            let frame_time = 1.0 / average;
             drop(avg);
             let mut i = 0;
             let mut event = Event::update_event();
@@ -408,6 +407,15 @@ pub mod entity_event{
         Float(f32),
         Double(f64),
 
+    }
+
+    impl EventDataValue {
+        pub fn as_f32(&self) -> Option<f32> {
+            match self {
+                Self::Float(v) => Some(*v),
+                _ => None
+            }
+        }
     }
 
     #[derive(Clone)]

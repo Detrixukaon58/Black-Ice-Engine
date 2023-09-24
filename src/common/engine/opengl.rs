@@ -103,7 +103,7 @@ impl MeshDriver {
                             m.z = -mesh.transform.x * camera.forward.x;
                             m.z += -mesh.transform.y * camera.forward.y;
                             m.z += -mesh.transform.z * camera.forward.z;
-                            println!("{}", m);
+                            
                             gl.ProgramUniformMatrix4fv(shader_program, i, 1, GL_FALSE.0 as u8, m.to_buffer44().as_ptr());
                         }
                         "_v" => {
@@ -657,7 +657,7 @@ pub struct RenderTexture {
 
 pub trait OGlRender {
     fn init(th: Arc<Mutex<Self>>) -> i32;
-    fn render(th: Arc<Mutex<Self>>) -> i32;
+    fn render(th: Arc<Mutex<Self>>, p_window: Arc<Mutex<sdl2::video::Window>>, p_video: Arc<Mutex<sdl2::VideoSubsystem>>) -> i32;
 }
 
 impl OGlRender for Pipeline {
@@ -678,7 +678,7 @@ impl OGlRender for Pipeline {
         0
     }
 
-    fn render(th: Arc<Mutex<Self>>) -> i32 {
+    fn render(th: Arc<Mutex<Self>>, p_window: Arc<Mutex<sdl2::video::Window>>, p_video: Arc<Mutex<sdl2::VideoSubsystem>>) -> i32 {
         unsafe {
             
             let mut pipeline = th.lock();
@@ -714,8 +714,8 @@ impl OGlRender for Pipeline {
                         let gl = driver.gl.as_ref().unwrap();
                         mesh.draw(gl, &camera);
                     }
-                
-                GAME.window.gl_swap_window();
+                    let window = p_window.lock();
+                    window.gl_swap_window();
             }
         }
         0
@@ -733,22 +733,20 @@ impl Default for DriverValues {
 }
 
 impl DriverValues {
-    pub unsafe fn init_ogl(this: &mut Self) {
+    pub unsafe fn init_ogl(this: &mut Self, window: &sdl2::video::Window, video: &sdl2::VideoSubsystem) {
 
-        
-
-        this.gl_context = Some(SdlGlContext(GAME.window.gl_create_context().expect("Failed to create Context!!")));
-        GAME.window.gl_make_current(&this.gl_context.as_ref().unwrap().0).expect("Failed to set current gl context!!");
+        this.gl_context = Some(SdlGlContext(window.gl_create_context().expect("Failed to create Context!!")));
+        window.gl_make_current(&this.gl_context.as_ref().unwrap().0).expect("Failed to set current gl context!!");
         // GAME.window.gl_set_context_to_current().expect("Failed to set current gl context!!");
 
-        this.gl = GlFns::load_from(&|f_name| GAME.video.gl_get_proc_address(std::ffi::CStr::from_ptr(f_name.cast()).to_str().unwrap()).cast() ).ok();
+        this.gl = GlFns::load_from(&|f_name| video.gl_get_proc_address(std::ffi::CStr::from_ptr(f_name.cast()).to_str().unwrap()).cast() ).ok();
         let gl = this.gl.as_ref().unwrap();
         gl.ClearColor(0.2, 0.3, 0.3, 1.0);
         
         
 
 
-        GAME.video.gl_set_swap_interval(sdl2::video::SwapInterval::VSync).expect("Failed to set swap interval!!");
+        video.gl_set_swap_interval(sdl2::video::SwapInterval::VSync).expect("Failed to set swap interval!!");
     }
 
     pub unsafe fn create_render_texture(this: &mut Self, width: i32, height: i32, texture_type: TextureType) -> RenderTexture

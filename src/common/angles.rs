@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use std::{f32::consts::PI, fmt::Display};
 
 #[allow(unused_imports)]

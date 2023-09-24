@@ -96,9 +96,14 @@ pub struct RenderPipelineSystem {
     driver_vals: Arc<Mutex<Option<DriverValues>>>,
     cameras: Vec<Arc<Mutex<Camera>>>,
     active_camera: i32,
-    ready: bool
+    ready: bool,
+    pub video: Arc<Mutex<sdl2::VideoSubsystem>>, 
+    pub window: Arc<Mutex<sdl2::video::Window>>
 
 }
+
+unsafe impl Send for RenderPipelineSystem {}
+unsafe impl Sync for RenderPipelineSystem {}
 
 impl RenderPipelineSystem{
     // TODO: Fix these so that it doesn't borrow self!!
@@ -191,7 +196,8 @@ impl RenderPipelineSystem{
         }
     }
 
-    pub fn new() -> RenderPipelineSystem {
+    pub fn new(sdl: &Sdl, video: sdl2::VideoSubsystem, window: sdl2::video::Window) -> RenderPipelineSystem {
+
         let pip_sys = RenderPipelineSystem {
             pipelines: Vec::new(),
             counter: AtomicI32::new(1),
@@ -202,7 +208,9 @@ impl RenderPipelineSystem{
             driver_vals: crate::common::components::component_system::ComponentRef_new(Some(DriverValues::default())),
             cameras: Vec::new(),
             active_camera: 0,
-            ready: false
+            ready: false,
+            window: Arc::new(Mutex::new(window)),
+            video: Arc::new(Mutex::new(video))
         };
         return pip_sys;
     }
@@ -221,12 +229,15 @@ impl RenderPipelineSystem{
             println!("{}", p_this.is_locked());
             let this = p_this.write();
             // Initialise pipeline stuff
-            #[cfg(feature = "vulkan")]DriverValues::init_vulkan(this.driver_vals.lock().as_mut().unwrap());
-            #[cfg(feature = "opengl")]DriverValues::init_ogl(this.driver_vals.lock().as_mut().unwrap());
-            #[cfg(feature = "gles")]DriverValues::init_gles(this);
+            #[cfg(feature = "vulkan")]DriverValues::init_vulkan(this.driver_vals.lock().as_mut().unwrap(), &this.window, &this.video);
+            #[cfg(feature = "opengl")]DriverValues::init_ogl(this.driver_vals.lock().as_mut().unwrap(), &this.window.lock(), &this.video.lock());
+            #[cfg(feature = "gles")]DriverValues::init_gles(this.driver_vals.lock().as_mut().unwrap(), &this.window, &this.video);
              // prebake step (only for when we have a better file system)
              // Create a new thread purely for baking and wait for this to finish
              // TODO: Implement better file system for storing shaders
+
+            
+
 
 
             // first we setup threads for each layer
@@ -245,6 +256,8 @@ impl RenderPipelineSystem{
                 let p_recv = this.thread_reciever.clone();
                 let p_pipelines = this.pipelines.clone();
                 let system_status = this.system_status.clone();
+                let p_window = this.window.clone();
+                let p_video = this.video.clone();
                 drop(this);
                 let mut recv = p_recv.try_lock();
                 if let Some(ref mut mutex) = recv {
@@ -293,9 +306,9 @@ impl RenderPipelineSystem{
                         #[cfg(feature = "gles")]GLESRender::init(p.clone());
                     }
                     
-                    #[cfg(feature = "vulkan")]VulkanRender::render(p.clone());
-                    #[cfg(feature = "opengl")]OGlRender::render(p.clone());
-                    #[cfg(feature = "gles")]GLESRender::render(p.clone());
+                    #[cfg(feature = "vulkan")]VulkanRender::render(p.clone(), p_window.clone(), p_video.clone());
+                    #[cfg(feature = "opengl")]OGlRender::render(p.clone(), p_window.clone(), p_video.clone());
+                    #[cfg(feature = "gles")]GLESRender::render(p.clone(), p_window.clone(), p_video.clone());
                 }
                 
                 // std::thread::sleep(std::time::Duration::from_millis(5));
@@ -341,6 +354,14 @@ impl RenderPipelineSystem{
         // Start thread
         println!("Spawned Render Pipeline System");
         Self::processing(this.clone());
+    }
+
+    pub unsafe fn set_cursor_position(x: i32, y: i32)
+    {
+        let p_rend_sys = Game::get_render_sys();
+        let mut rend_sys = p_rend_sys.read();
+        let window = rend_sys.window.lock();
+        GAME.mouse.warp_mouse_in_window(&window, x as i32, y as i32);
     }
 
     //region Vulkan Render 

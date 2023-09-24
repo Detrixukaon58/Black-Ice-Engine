@@ -30,6 +30,7 @@ impl BaseComponent for MeshComponent {
     }
 
     fn process_event(&mut self, event: &Event) {
+        let frame_time = event.event_data.get("frame_time".to_string()).unwrap().as_f32().unwrap();
         match event.event_flag {
             EventFlag::INIT => {
                 self.init_mesh();
@@ -73,7 +74,7 @@ impl Constructor<MeshComponent> for MeshComponent {
             mesh_id: -1,
             layer: layer,
             transform: Transform::new(definition["position"].as_vec3()?, definition["rotation"].as_quat()?, definition["scale"].as_vec3()?),
-            p_entity: entity.clone() 
+            p_entity: entity.clone(),
         }))
     }
     fn default_constuctor_definition() -> ConstructorDefinition {
