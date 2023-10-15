@@ -27,7 +27,7 @@ pub struct EventSystem {
     events: Vec<Event>,
     event_handlers: Vec<Arc<Mutex<EventHandler>>>,
     event_pump: Vec<Arc<sdl2::event::Event>>,
-    ready: bool
+    ready: bool,
 }
 
 unsafe impl Send for EventSystem {}
@@ -118,25 +118,28 @@ impl EventSystem {
                             let mut new_x = x;
                             let mut new_y = y;
                             if x <= 1 {
-                                new_x = GAME.window_x as i32 - 4;
-                                RenderPipelineSystem::set_cursor_position(new_x, new_y);
-                                input.cursor_x.push(-new_x as f32);
+                                new_x = GAME.window_x as i32 / 2;
+                                input.cursor_x.push(new_x as f32);
+                                RenderPipelineSystem::set_mouse_position(new_x, new_y);
+                                
                             }
                             if y <= 1 {
-                                new_y = GAME.window_y as i32 - 4;
-                                RenderPipelineSystem::set_cursor_position(new_x, new_y);
-                                input.cursor_y.push(-new_y as f32);
+                                new_y = GAME.window_y as i32 / 2;
+                                input.cursor_y.push(new_y as f32);
+                                RenderPipelineSystem::set_mouse_position(new_x, new_y);
+                                
                             }
                             if x >= GAME.window_x as i32 - 1{
-                                new_x = 4;
-                                RenderPipelineSystem::set_cursor_position(new_x, new_y);
-                                input.cursor_x.push(-new_x as f32);
+                                new_x = GAME.window_x as i32 / 2;
+                                RenderPipelineSystem::set_mouse_position(new_x, new_y);
+                                input.cursor_x.push(new_x as f32);
                             }
                             if y >= GAME.window_y as i32  - 1{
-                                new_y = 4;
-                                RenderPipelineSystem::set_cursor_position(new_x, new_y);
-                                input.cursor_y.push(-new_y as f32);
+                                new_y = GAME.window_y as i32 / 2;
+                                RenderPipelineSystem::set_mouse_position(new_x, new_y);
+                                input.cursor_y.push(new_y as f32);
                             }
+
                             
                         }
                     }

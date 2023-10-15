@@ -15,6 +15,7 @@ pub struct CameraComponent {
     forward: Vec3,
     y: f32,
     pub p_entity: EntityPtr,
+    test: Ang3,
 }
 
 impl Base for CameraComponent {}
@@ -34,21 +35,28 @@ impl BaseComponent for CameraComponent {
 
     fn process_event(&mut self, event: &entity_event::Event) {
         use entity_event::EventFlag;
+        let frame_time = event.event_data.get("frame_time".to_string()).unwrap().as_f32().unwrap();
         match event.event_flag {
             EventFlag::INIT => {
                 self.init();
                 // self.transform.rotate(Quat::euler(Ang3::new(45.0, 0.0, 0.0)));
+                self.transform.set_position(Vec3::new(0.0, 0.0, 1.0));
             },
             EventFlag::UPDATE => {
 
                 //self.transform.rotate(Quat::euler(Ang3::new(1.0 * std::time::Duration::from_millis(16).as_secs_f32(), 0.0, 0.0)));
                 let (mut cursor_x, mut cursor_y) = InputSystem::get_cursor();
+                self.test = Ang3::new(self.test.y + cursor_x.change(), self.test.p + (cursor_y.change() * self.test.y.to_radians().cos()), self.test.r + (cursor_y.change() * self.test.y.to_radians().sin()));
                 unsafe {
-                    self.transform.set_rotation(Quat::euler(Ang3::new(
-                        -cursor_x.get_position(), 
-                        -cursor_y.get_position() * (-cursor_x.get_position() % 360.0).to_radians().cos(),
-                        -cursor_y.get_position() * (-cursor_x.get_position() % 360.0).to_radians().sin(),
-                    )));
+                    let previous_rotation = self.transform.rotation.to_euler();
+                    self.transform.set_rotation(Quat::euler(
+                        // Ang3::new(
+                        //     -cursor_x.get_position(),
+                        //     -cursor_y.get_position() * (-cursor_x.get_position()).to_radians().cos(), 
+                        //     -cursor_y.get_position() * (-cursor_x.get_position()).to_radians().sin(), 
+                        // )
+                        self.test
+                    ));
                     
                 }
                 self.look_at(
@@ -90,6 +98,7 @@ impl Constructor<CameraComponent> for CameraComponent {
             forward: definition["forward"].as_vec3()?,
             y: 0.0,
             view_transform: Matrix34::identity(),
+            test: Ang3::new(0.0, 0.0, 0.0),
         }))
     }
 
@@ -128,7 +137,7 @@ impl CameraComponent {
                 self.projection.perpective_projection(width/height, 75.0, 0.1, depth);
                 // self.projection = MatrixProjection::identity();
             }
-            
+            InputSystem::reset_cursor();
         }
     }
 

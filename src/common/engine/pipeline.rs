@@ -98,7 +98,8 @@ pub struct RenderPipelineSystem {
     active_camera: i32,
     ready: bool,
     pub video: Arc<Mutex<sdl2::VideoSubsystem>>, 
-    pub window: Arc<Mutex<sdl2::video::Window>>
+    pub window: Arc<Mutex<sdl2::video::Window>>,
+    pub sdl: Arc<Mutex<sdl2::Sdl>>,
 
 }
 
@@ -196,7 +197,7 @@ impl RenderPipelineSystem{
         }
     }
 
-    pub fn new(sdl: &Sdl, video: sdl2::VideoSubsystem, window: sdl2::video::Window) -> RenderPipelineSystem {
+    pub fn new(sdl: Arc<Mutex<Sdl>>, video: Arc<Mutex<sdl2::VideoSubsystem>>, window: Arc<Mutex<sdl2::video::Window>>) -> RenderPipelineSystem {
 
         let pip_sys = RenderPipelineSystem {
             pipelines: Vec::new(),
@@ -209,8 +210,9 @@ impl RenderPipelineSystem{
             cameras: Vec::new(),
             active_camera: 0,
             ready: false,
-            window: Arc::new(Mutex::new(window)),
-            video: Arc::new(Mutex::new(video))
+            window: window,
+            video: video,
+            sdl: sdl,
         };
         return pip_sys;
     }
@@ -356,12 +358,20 @@ impl RenderPipelineSystem{
         Self::processing(this.clone());
     }
 
-    pub unsafe fn set_cursor_position(x: i32, y: i32)
+    pub unsafe fn set_mouse_position(x: i32, y: i32)
     {
         let p_rend_sys = Game::get_render_sys();
         let mut rend_sys = p_rend_sys.read();
         let window = rend_sys.window.lock();
-        GAME.mouse.warp_mouse_in_window(&window, x as i32, y as i32);
+        GAME.sdl_values.mouse.lock().warp_mouse_in_window(&window, x as i32, y as i32);
+    }
+
+    pub fn get_sdl() -> Arc<Mutex<sdl2::Sdl>> {
+        unsafe{
+            let p_rend = Game::get_render_sys();
+            let rend = p_rend.read();
+            rend.sdl.clone()
+        }
     }
 
     //region Vulkan Render 

@@ -187,7 +187,8 @@ pub enum StatusCode{
 #[derive(Clone)]
 pub struct Avg<T> {
     inner: Vec<T>,
-    init: f32
+    init: f32,
+    timer: u128,
 }
 
 
@@ -208,9 +209,14 @@ impl Avg<f32> {
     {
         let change = self.change();
         self.init += change;
+        self.timer = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
     }
 
     pub fn change(&mut self) -> f32 {
+        let time = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
+        if time - self.timer >= 4 {
+            return 0.0;
+        }
         if self.inner.len() > 1 {
             self.inner.reverse();
             let res = self.inner[0] - self.inner[1];
@@ -234,11 +240,25 @@ impl Avg<f32> {
     }
 
     pub fn new() -> Self {
-        Self { inner: Vec::new(), init: 0.0}
+        Self { inner: Vec::new(), init: 0.0, timer: 0}
+    }
+
+    pub fn reset(&mut self){
+        self.inner.clear();
+        self.init = 0.0;
     }
 }
 
-// This is always static(mustn't be created non-statically)
+pub struct SDLValues {
+    pub sdl: Arc<Mutex<sdl2::Sdl>>,
+    pub video: Arc<Mutex<sdl2::VideoSubsystem>>,
+    pub window: Arc<Mutex<sdl2::video::Window>>,
+    pub keybaord: Arc<Mutex<sdl2::keyboard::KeyboardUtil>>,
+    pub mouse: Arc<Mutex<sdl2::mouse::MouseUtil>>,
+    pub cursor: Arc<Mutex<sdl2::mouse::Cursor>>,
+}
+
+// This is always static(mustn't be created non-statically)s
 pub struct Game {
 
     pub gameName: Arc<Mutex<String>>,
@@ -248,9 +268,7 @@ pub struct Game {
     INPUT_SYS: Arc<Mutex<InputSystem>>,
     EVENT_SYS: Arc<Mutex<EventSystem>>,
     pub STATUS: Arc<Mutex<StatusCode>>,
-    pub sdl: sdl2::Sdl,
-    pub mouse: sdl2::mouse::MouseUtil,
-    pub keyboard: sdl2::keyboard::KeyboardUtil,
+    pub sdl_values: SDLValues,
     pub window_x: u32,
     pub window_y: u32,
     show_cursor: bool,
@@ -267,14 +285,14 @@ impl Game {
         }
     }
 
-    pub fn new() -> Game{
+    pub fn new_sdl() -> Game{
         let reg = components::component_system::ComponentRef_new(Registry {reg: Lazy::new(
             || {HashMap::<Box<&str>,Box<Register>>::new()}
         )});
         
 
-        let sdl = init().expect("Failed to initialise SDL!!");
-        let video = sdl.video().expect("Failed to get video.");
+        let sdl = Arc::new(Mutex::new(init().expect("Failed to initialise SDL!!")));
+        let video = Arc::new(Mutex::new(sdl.lock().video().expect("Failed to get video.")));
         let x = 800;
         let y = 600;
         #[cfg(feature = "vulkan")]
@@ -287,22 +305,40 @@ impl Game {
         ;
 
         #[cfg(feature = "opengl")]
-        let window = video.window("Game Window", x, y)
+        let window = Arc::new(Mutex::new(video.lock().window("Game Window", x, y)
             .position_centered()
             .opengl()
             .resizable()
             .build()
-            .expect("Failed to build window!")
+            .expect("Failed to build window!")))
         ;
+        let mouse = Arc::new(Mutex::new(sdl.lock().mouse()));
+        let keyboard = Arc::new(Mutex::new(sdl.lock().keyboard()));
+        // mouse.lock().show_cursor(false);
+        mouse.lock().capture(true);
+        mouse.lock().warp_mouse_in_window(&window.lock(), x as i32 / 2, y as i32 / 2);
+
+        let cursor = Arc::new(Mutex::new(sdl2::mouse::Cursor::new(
+            &[1], 
+            &[1], 
+            5, 
+            5, 
+            0, 
+            0
+        ).expect("Failed to create cursor!!")));
+        cursor.lock().set();
         let ent_sys = components::component_system::ComponentRef_new(EntitySystem::new());
-        let mouse = sdl.mouse();
-        let keyboard = sdl.keyboard();
-        mouse.show_cursor(false);
-        mouse.capture(true);
-        mouse.warp_mouse_in_window(&window, x as i32 / 2, y as i32 / 2);
         let input_sys = Arc::new(Mutex::new(InputSystem::new(x / 2, y / 2)));
         let event_system = Arc::new(Mutex::new(EventSystem::new()));
-        let render_sys = Arc::new(RwLock::new(RenderPipelineSystem::new(&sdl, video, window)));
+        let render_sys = Arc::new(RwLock::new(RenderPipelineSystem::new(sdl.clone(), video.clone(), window.clone())));
+        let sdl_values = SDLValues {
+            sdl: sdl,
+            video: video,
+            window: window,
+            mouse: mouse,
+            keybaord: keyboard,
+            cursor: cursor,
+        };
         Game { 
             gameName: Arc::new(Mutex::new(String::from("Game Name"))), 
             REGISTRAR: reg, 
@@ -311,11 +347,9 @@ impl Game {
             INPUT_SYS: input_sys,
             EVENT_SYS: event_system,
             STATUS: Arc::new(Mutex::new(StatusCode::INITIALIZE)),
-            sdl: sdl,
-            mouse: mouse,
-            keyboard: keyboard,
             window_x: x,
             window_y: y,
+            sdl_values: sdl_values,
             show_cursor: false,
         }
     }
@@ -384,30 +418,22 @@ impl Game {
                 drop(mesh);
                 v_p_mesh.push(p_mesh);
             }
-            let mut cam = p_cam.lock();
-            let mut input = self.INPUT_SYS.lock();
-
-            cam.set_position(Vec3::new(0.0, 0.0, 1.0));
-            cam.set_rotation(Quat::euler(Ang3::new(
-                input.cursor_x.get_position() / 25.0, 
-                input.cursor_y.get_position() * input.cursor_x.get_position().cos() / 25.0,
-                input.cursor_y.get_position() * input.cursor_x.get_position().sin() / 25.0,
-            )));
-            drop(input);
-            // cam.set_rotation(Quat::euler(Ang3::new(0.0, 90.0, 0.0)));
-            drop(cam);
             EntitySystem::start(p_ent_sys_2.clone());
             RenderPipelineSystem::start(p_rend_sys_2.clone());
             InputSystem::start(p_input_sys_2.clone());
             EventSystem::start(p_event_sys_2.clone());
 
             // here we loop for the events
-            // let mut forward = Vec3::new(1.0, 0.0, 0.0);
+
+            let mut p_sdl = RenderPipelineSystem::get_sdl();
+            
             loop{
                 if unsafe{Game::isExit()} {
                     break;
                 }
-                let mut pp_event_pump = self.sdl.event_pump();
+                let mut sdl = p_sdl.lock();
+                let mut pp_event_pump = sdl.event_pump();
+                drop(sdl);
                 let mut p_event_pump = pp_event_pump.unwrap();
                 let mut event_pump = p_event_pump.poll_iter();
                 let mut events = event_pump.map(|f| Arc::new(f)).collect::<Vec<Arc<sdl2::event::Event>>>();
@@ -464,8 +490,8 @@ impl Game {
         unsafe{
             let show_cursor = !GAME.show_cursor;
             println!("show_cursor: {}", show_cursor);
-            GAME.mouse.show_cursor(show_cursor);
-            GAME.mouse.capture(!show_cursor);
+            GAME.sdl_values.mouse.lock().show_cursor(show_cursor);
+            GAME.sdl_values.mouse.lock().capture(!show_cursor);
             GAME.show_cursor = show_cursor;
             let p_rend_sys = Game::get_render_sys();
             let mut rend_sys = p_rend_sys.read();
@@ -473,11 +499,12 @@ impl Game {
             let mut window = p_window.lock();
             drop(rend_sys);
             window.hide();
-            std::thread::sleep(std::time::Duration::from_millis(1));
+            
             window.show();
+            
         }
     }
 
 }
 
-pub static mut GAME: Lazy<Game> = Lazy::new( || {Game::new()});
+pub static mut GAME: Lazy<Game> = Lazy::new( || {Game::new_sdl()});

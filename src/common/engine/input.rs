@@ -109,7 +109,7 @@ impl InputSystem {
             drop(this);
             for inp in &input_buffer {
                 for p_input_handlers in &input_event_handlers {
-                    let input_handlerts = p_input_handlers.lock();
+                    let input_handlers = p_input_handlers.lock();
 
                 }
             }
@@ -143,6 +143,16 @@ impl InputSystem {
             let p_input = Game::get_input_sys();
             let mut input = p_input.lock();
             (input.cursor_x.clone(), input.cursor_y.clone())
+        }
+    }
+
+    pub fn reset_cursor() {
+        unsafe
+        {
+            let p_input = Game::get_input_sys();
+            let mut input = p_input.lock();
+            input.cursor_x.reset();
+            input.cursor_y.reset();
         }
     }
 
