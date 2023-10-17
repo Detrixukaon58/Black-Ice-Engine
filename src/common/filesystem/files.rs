@@ -116,7 +116,7 @@ impl FileSys{
         //println!("{}", _path);
         let mut full_path = format!("{}\\{}", ASSET_PATH, _path[7..].to_owned());
         full_path = String::from(full_path).replace("\\", "/");
-        //println!("{}", full_path);
+        println!("{}", full_path);
         let dir = fs::metadata(full_path.clone()).unwrap();
         
         if dir.is_file() {
@@ -238,7 +238,8 @@ impl AsShaderFile for FileSys {
     }
 
     fn include_shaders() -> glsl_include::Context<'static> {
-        let path: String = APP_DIR.clone().to_owned() + "\\assets\\shaders\\";
+        let path: String = ASSET_PATH.to_string() + "/shaders/";
+        println!("{}", path);
         let mut directory = fs::read_dir(path).unwrap();
         let mut context: glsl_include::Context = glsl_include::Context::new();
         let mut path_stack = Vec::<ReadDir>::new();
