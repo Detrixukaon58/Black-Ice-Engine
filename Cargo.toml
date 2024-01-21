@@ -10,11 +10,12 @@ authors = ["Detrixukoan58"]
 name="black_ice_lib"
 version ="0.1.0"
 path="src/libs.rs"
-crate-type = ["cdylib"]
+crate-type = ["rlib", "dylib"]
 
 [[bin]]
 name = "black_ice_executable"
 path = "src/main.rs"
+required-features = ["build-binary"]
 
 [dependencies]
 bytemuck = "1"
@@ -33,8 +34,11 @@ futures = { version = "*", features = ["thread-pool"] }
 bitmask-enum = { version = "*"}
 colored = { version = "*"}
 parking_lot = {version = "*"}
+openal = {version = "*"}
+libloading = "*"
 
 [features]
 vulkan = ["dep:ash", "dep:ash-window", "sdl2/raw-window-handle"]
 opengl = ["dep:gl46"]
 gles = ["dep:opengles"]
+build-binary = []

@@ -3,11 +3,11 @@
 #![allow(non_snake_case)]
 use std::{sync::Arc, fmt::{Display, Pointer}, collections::HashMap};
 
-use crate::common::{engine::gamesys::*, components::entity::*, vertex::*, matrices::*};
+use crate::black_ice::common::{engine::gamesys::*, components::entity::*, vertex::*, matrices::*};
 
 use super::entity::entity_system::*;
 use parking_lot::*;
-use crate::common::angles::{Ang3, Quat};
+use crate::black_ice::common::angles::{Ang3, Quat};
 
 
 pub struct ComponentSystem {

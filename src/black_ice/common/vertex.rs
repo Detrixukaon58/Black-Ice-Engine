@@ -1,6 +1,6 @@
 
 use std::{ops, f32::consts::PI, convert::TryFrom, fmt::{Display, Formatter, Result}};
-use crate::common::engine::gamesys::*;
+use crate::black_ice::common::engine::gamesys::*;
 use super::matrices::Vec4;
 
 pub type Vertex = [f32; 3];

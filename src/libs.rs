@@ -1,3 +1,5 @@
 extern crate shaderc;
 
-pub mod common;
+pub mod black_ice {
+    pub mod common;
+}

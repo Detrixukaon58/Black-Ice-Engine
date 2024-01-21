@@ -1,7 +1,7 @@
 #![allow(unused)]
 #![allow(non_snake_case)]
 
-use crate::common::{components::{component_system::*, entity::entity_system::*}, *, filesystem::files::*, vertex::*};
+use crate::black_ice::common::{components::{component_system::*, entity::entity_system::*}, *, filesystem::files::*, vertex::*};
 
 
 
@@ -109,7 +109,7 @@ impl Image {
         unsafe{
             let mut p_render_sys = Game::get_render_sys().clone();
             let mut render_sys = p_render_sys.write();
-            render_sys.quick_redner(temp, faces, tex_cood, image_idat);
+            
         }
     }
 }

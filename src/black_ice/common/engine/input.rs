@@ -6,7 +6,7 @@ use colored::Colorize;
 use parking_lot::*;
 use sdl2::{*, sys::*, mouse::MouseButton};
 
-use crate::common::{engine::gamesys::*, components::entity::entity_system::*};
+use crate::black_ice::common::{engine::gamesys::*, components::entity::entity_system::*};
 
 #[derive(Clone)]
 pub enum MouseCode {

@@ -1,7 +1,7 @@
 #![allow(unused)]
 #![allow(non_snake_case)]
 
-use crate::common::{components::{component_system::*, entity::entity_system::*}, *, filesystem::files::*, vertex::*, matrices::*, engine::{gamesys::*, input::InputSystem}, angles::*, transform::Transform};
+use crate::black_ice::common::{components::{component_system::*, entity::entity_system::*}, *, filesystem::files::*, vertex::*, matrices::*, engine::{gamesys::*, input::InputSystem}, angles::*, transform::Transform};
 
 
 pub struct CameraComponent {

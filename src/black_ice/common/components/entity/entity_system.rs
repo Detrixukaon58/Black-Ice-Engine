@@ -3,7 +3,7 @@
 use std::{any::*, thread::JoinHandle, collections::*, sync::{Arc, atomic::*}, future::*, pin::*, ops::DerefMut, alloc::Layout};
 use bitmask_enum::*;
 
-use crate::common::{engine::{gamesys::*, threading::ThreadData}, vertex::*, angles::*, components::{component_system::{*, self}, entity}, transform::{self, Transform}, matrices::Matrix34};
+use crate::black_ice::common::{engine::{gamesys::*, threading::ThreadData}, vertex::*, angles::*, components::{component_system::{*, self}, entity}, transform::{self, Transform}, matrices::Matrix34};
 use parking_lot::*;
 use colored::*;
 
@@ -374,7 +374,7 @@ pub mod entity_event{
     use std::collections::HashMap;
     use std::any::*;
 
-    use crate::common::{engine::gamesys::BaseToAny, vertex::*};
+    use crate::black_ice::common::{engine::gamesys::BaseToAny, vertex::*};
 
     use super::*;
 

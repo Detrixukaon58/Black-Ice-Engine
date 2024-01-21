@@ -1,4 +1,4 @@
-use crate::common::{vertex::*, angles::*, matrices::*};
+use crate::black_ice::common::{vertex::*, angles::*, matrices::*};
 
 use super::{components::entity::entity_system::*, engine::gamesys::Game};
 use std::sync::*;

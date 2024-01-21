@@ -4,12 +4,14 @@ use std::fs::{*, self};
 use std::io::{prelude::*, BufReader};
 use shaderc::CompileOptions;
 
-use crate::common::{APP_DIR, materials};
-use crate::common::engine::gamesys::*;
-
+use crate::black_ice::common::{APP_DIR, materials};
+use crate::black_ice::common::engine::gamesys::*;
+use crate::black_ice::common::engine::assetpack::*;
 
 #[cfg(target_os = "windows")] const ASSET_PATH: &str =  "F:\\Rust\\Program 1\\assets";
 #[cfg(target_os = "linux")] const ASSET_PATH: &str = "/home/detrix/rust/black-ice/assets";
+#[cfg(not(debug_assertions))] const IS_DEBUG: bool = false;
+#[cfg(debug_assertions)] const IS_DEBUG: bool = true;
 
 #[derive(Clone)]
 pub struct AssetPath {
@@ -113,25 +115,51 @@ impl FileSys{
 
     pub fn open(&mut self, _path: &str){
         // do more to getting it for only local systems e.g. get resources from pak files when in release and from local assets when in debug
-        //println!("{}", _path);
-        let mut full_path = format!("{}\\{}", ASSET_PATH, _path[7..].to_owned());
-        full_path = String::from(full_path).replace("\\", "/");
-        //println!("{}", full_path);
-        let dir = fs::metadata(full_path.clone()).unwrap();
-        
-        if dir.is_file() {
-            self.f = Option::Some(File::open(full_path.as_str()).expect(format!("File {} not found!", _path[7..].to_owned()).as_str()));// format "ASSET:\\path\\to\\file" => "DRIVE:\\path\\to\\assets\\path\\to\\file"
-            self.path = String::from(_path);
-            self.b = Option::Some(BufReader::new((*self.f.as_ref().unwrap()).try_clone().expect("Couldn't clone file for BufReader!!")));
-            self.is_file = true;
+
+        if IS_DEBUG
+        {
+            let mut full_path = format!("{}\\{}", ASSET_PATH, _path[7..].to_owned());
+            full_path = String::from(full_path).replace("\\", "/");
+            let dir = fs::metadata(full_path.clone()).unwrap();
+            
+            if dir.is_file() {
+                self.f = Option::Some(File::open(full_path.as_str()).expect(format!("File {} not found!", _path[7..].to_owned()).as_str()));// format "ASSET:\\path\\to\\file" => "DRIVE:\\path\\to\\assets\\path\\to\\file"
+                self.path = String::from(_path);
+                self.b = Option::Some(BufReader::new((*self.f.as_ref().unwrap()).try_clone().expect("Couldn't clone file for BufReader!!")));
+                self.is_file = true;
+                
+            }
+            else if dir.is_dir() {
+                self.p = Option::Some(fs::read_dir(full_path).unwrap());
+                self.path = String::from(_path);
+                self.is_dir = true;
+                self.total_len = self.p.as_mut().unwrap().count();
+            }
+        }
+        else 
+        {
+            // now get as asset pack!!
+        }
+    }
+
+    pub fn get_file_ext(&self) -> String {
+        let mut last_i = 0;
+
+        for i in 0..(self.path.len()){
+
+            if self.path.chars().nth(i).unwrap() == '.' {
+
+                last_i = i;
+
+            }
             
         }
-        else if dir.is_dir() {
-            self.p = Option::Some(fs::read_dir(full_path).unwrap());
-            self.path = String::from(_path);
-            self.is_dir = true;
-            self.total_len = self.p.as_mut().unwrap().count();
+
+        if last_i == 0 {
+            return "".to_string();
         }
+
+        self.path.get(last_i+1..).unwrap().to_string()
     }
 
     pub fn check_file_ext(&self) -> MFType{
@@ -167,13 +195,46 @@ impl FileSys{
         if ext.eq("mtl") || ext.eq(".mtl") {
             mf = MFType::MTL;
         }
-        if ext.eq(".shad") || ext.eq("shad") {
+        if ext.eq(".shad") || ext.eq("shad") || ext.eq(".glsl") || ext.eq("glsl") || ext.eq(".comp") || ext.eq("comp") || ext.eq(".frag") || ext.eq("frag") || ext.eq(".vert") || ext.eq("vert") {
             mf = MFType::SHADER;
         }
         return mf;
 
     }
 
+    pub fn get_file_name(&self) -> String {
+        let mut last_i = 0;
+        let mut last_slash = 0;
+
+        for i in 0..(self.path.len()){
+
+            if self.path.chars().nth(i).unwrap() == '.' {
+
+                last_i = i;
+
+            }
+            if self.path.chars().nth(i).unwrap() == '/' {
+
+                last_slash = i;
+
+            }
+            if self.path.chars().nth(i).unwrap() == '\\' {
+
+                last_slash = i;
+
+            }
+            
+        }
+
+        if last_i == 0 {
+            return "".to_string();
+        }
+        if last_slash == 0 {
+            return "".to_string();
+        }
+
+        self.path.get(last_slash..last_i).unwrap().to_string()
+    }
 
 }
 
@@ -238,7 +299,7 @@ impl AsShaderFile for FileSys {
     }
 
     fn include_shaders() -> glsl_include::Context<'static> {
-        let path: String = APP_DIR.clone().to_owned() + "\\assets\\shaders\\";
+        let path: String = APP_DIR.to_owned() + "\\assets\\shaders\\";
         let mut directory = fs::read_dir(path).unwrap();
         let mut context: glsl_include::Context = glsl_include::Context::new();
         let mut path_stack = Vec::<ReadDir>::new();
@@ -292,9 +353,11 @@ impl Reader<String> for FileSys {
             },
             MFType::PNG=>{
                 result = self.png_handler();
-            }
+            },
             _=>{
-
+                unsafe {
+                    let _data = self.b.as_mut().expect("Failed to read file!!").read_to_end(result.as_mut_vec());
+                }
             }
         }
 

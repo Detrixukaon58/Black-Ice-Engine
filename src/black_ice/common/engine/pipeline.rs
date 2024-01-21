@@ -14,11 +14,11 @@ use colored::*;
 
 extern crate raw_window_handle;
 
-use crate::common::materials::*;
-use crate::common::matrices::*;
-use crate::common::mesh::*;
-use crate::common::engine::*;
-use crate::common::vertex::*;
+use crate::black_ice::common::materials::*;
+use crate::black_ice::common::matrices::*;
+use crate::black_ice::common::mesh::*;
+use crate::black_ice::common::engine::*;
+use crate::black_ice::common::vertex::*;
 
 use super::gamesys::*;
 use super::threading::*;
@@ -27,10 +27,40 @@ use super::threading::*;
 #[cfg(feature = "opengl")] use super::opengl::*;
 #[cfg(feature = "gles")] use super::gles::*;
 
+// generic data enum to let us handle acceptable types of data
+pub enum Data {
+    FloatSequence(Vec<f32>),
+    IntegerSequence(Vec<i32>),
+    I16Sequence(Vec<i16>),
+    DoubleSequence(Vec<f64>),
+    ImageSequence(Vec<[f32; 3]>),
+    Mesh(Arc<Mutex<Mesh>>),
+    Float(f32),
+    Integer(i32),
+    I16(i16),
+    Double(f64)
+
+}
+
+pub struct DataSets {
+    pub id: i32,
+    // an editable set of data that exists in heap
+    pub input_data: Arc<Mutex<Vec<Data>>>,
+    // read-only output of the data after each stage. You must make sure to know how mucb data is outputed from each stage to know what data you are getting
+    pub output: Arc<Mutex<Vec<Data>>>,
+    pub shader_stages: Vec<ShaderPtr>
+}
+
+impl DataSets {
+    fn new(id: i32, input: Arc<Mutex<Vec<Data>>>, output: Arc<Mutex<Vec<Data>>>, stages: Vec<ShaderPtr>) -> Self {
+        Self {id:id, input_data: input, output: output, shader_stages: stages }
+    }
+}
+
 pub struct Pipeline {
     pub id: i32,
     pub name: String,
-    pub meshs: Vec<MeshDriver>,
+    pub data_sets: Vec<DataSets>,
     pub cameras: Vec<CameraDriver>,
     pub layer: u32,
     pub driver: Arc<Mutex<Option<DriverValues>>>,
@@ -46,14 +76,17 @@ pub struct PipelineParams {
 
 unsafe impl Send for Pipeline {}
 
+// Need to change this for generic gpu rendering and compute shaders!!
 impl Pipeline {
-    pub fn register_mesh(&mut self, p_mesh: Arc<Mutex<Mesh>>){
-        
-        self.meshs.push(MeshDriver::new(self.driver.clone(), p_mesh.clone()));
-    }
 
     pub fn register_camera(&mut self, p_camera: Arc<Mutex<Camera>>){
         self.cameras.push(CameraDriver::new(p_camera.clone()));
+    }
+
+    pub fn register_data(&mut self, data: Arc<Mutex<Vec<Data>>>, stages: Vec<ShaderPtr>, id: i32){
+        let output = Arc::new(Mutex::new(Vec::new()));
+        self.data_sets.push(DataSets::new(id, data, output, stages));
+        
     }
 }
 
@@ -100,6 +133,7 @@ pub struct RenderPipelineSystem {
     pub video: Arc<Mutex<sdl2::VideoSubsystem>>, 
     pub window: Arc<Mutex<sdl2::video::Window>>,
     pub sdl: Arc<Mutex<sdl2::Sdl>>,
+    shader_stages_data: Vec<ShaderStage>,
 
 }
 
@@ -115,7 +149,7 @@ impl RenderPipelineSystem{
         let p = Arc::new(Mutex::new(Pipeline {
             id: id.clone(),
             name: params.name.clone(),
-            meshs: Vec::new(),
+            data_sets: Vec::new(),
             layer: params.layer,
             driver: this.driver_vals.clone(),
             cameras: Vec::new(),
@@ -127,18 +161,36 @@ impl RenderPipelineSystem{
         id
     }
 
-    pub unsafe fn register_mesh(&mut self, layer: u32, mesh: Arc<Mutex<Mesh>>){
-        
-        let p_pipelines = self.pipelines.clone();
-        for p in &p_pipelines {
+    pub unsafe fn register_data(&mut self, layer: u32, data: Arc<Mutex<Vec<Data>>>, stages: Vec<ShaderStage>) -> i32{
+        let mut ptrs = vec![];
+        for stage in stages {
+            ptrs.push(RenderPipelineSystem::register_shader_stage(stage));
+        }
+        let id = self.counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        for p in &self.pipelines {
             let mut pipeline = p.lock();
-            if(pipeline.layer == layer){
-                let m = mesh.clone();
-                pipeline.register_mesh(m);
+            if pipeline.layer == layer {
                 
+                pipeline.register_data(data.clone(), ptrs.clone(), id.clone());
             }
         }
-        
+        id
+    }
+
+    pub unsafe fn get_return_datas(&mut self, layer: u32, data_ptr: i32) -> Vec<Arc<Mutex<Vec<Data>>>>
+    {
+        let mut output = vec![];
+        for p in &self.pipelines {
+            let mut pipeline = p.lock();
+            if pipeline.layer == layer {
+                for data in &pipeline.data_sets {
+                    if data.id == data_ptr {
+                        output.push(data.output.clone());
+                    }
+                }
+            }
+        }
+        output
     }
 
     pub unsafe fn register_camera(&mut self, layer: u32) -> i32 {
@@ -158,6 +210,29 @@ impl RenderPipelineSystem{
 
         id
 
+    }
+
+    pub unsafe fn register_shader_stage(shader_stage: ShaderStage) -> usize{
+        let mut p_rend = Game::get_render_sys();
+        let mut rend = p_rend.write();
+        let mut i = 0;
+        for stages in &rend.shader_stages_data {
+            if stages.stage_name.eq(&shader_stage.stage_name) {
+                return i;
+            }
+            i += 1;
+        }
+        i = rend.shader_stages_data.len();
+        rend.shader_stages_data.push(shader_stage);
+        return i;
+    }
+
+    pub unsafe fn update_shader(shader_data: ShaderData, shader_ptr: usize) {
+        let mut p_rend = Game::get_render_sys();
+        let mut rend = p_rend.write();
+        let mut i = 0;
+        let mut stage = rend.shader_stages_data.get_mut(shader_ptr).expect("Shader pointer out of range!!");
+        stage.shader_data = shader_data;
     }
 
     pub fn update_camera(&mut self, id: i32, projection: &MatrixProjection, transform: &Matrix34, up: Vec3, forward: Vec3) {
@@ -206,13 +281,14 @@ impl RenderPipelineSystem{
             thread_count: 0,
             threads: Dict::<usize, Arc<Mutex<Threader>>>::new(),
             thread_reciever: Arc::new(Mutex::new(Vec::new())),
-            driver_vals: crate::common::components::component_system::ComponentRef_new(Some(DriverValues::default())),
+            driver_vals: crate::black_ice::common::components::component_system::ComponentRef_new(Some(DriverValues::default())),
             cameras: Vec::new(),
             active_camera: 0,
             ready: false,
             window: window,
             video: video,
             sdl: sdl,
+            shader_stages_data: vec![],
         };
         return pip_sys;
     }
@@ -276,22 +352,6 @@ impl RenderPipelineSystem{
                                 let mut sys_status = system_status.lock();
                                 *sys_status = status;
                             },
-                            ThreadData::QuickDraw(v, f, tx, d) => {
-
-                            },
-                            ThreadData::Mesh(layer, mesh) => {
-                                for p in &p_pipelines {
-                                    let mut pipeline = match p.try_lock() {
-                                        Some(v) => v,
-                                        None => continue
-                                    };
-                                    if(pipeline.layer == layer){
-                                        let m = mesh.clone();
-                                        pipeline.register_mesh(m);
-                                        
-                                    }
-                                }
-                            }
                             _ => {},
                         }
                     }
@@ -363,7 +423,6 @@ impl RenderPipelineSystem{
         let p_rend_sys = Game::get_render_sys();
         let mut rend_sys = p_rend_sys.read();
         let window = rend_sys.window.lock();
-        GAME.sdl_values.mouse.lock().warp_mouse_in_window(&window, x as i32, y as i32);
     }
 
     pub fn get_sdl() -> Arc<Mutex<sdl2::Sdl>> {
@@ -390,47 +449,47 @@ impl RenderPipelineSystem{
     //endregion
 
 
-    pub fn quick_redner<'a>(&mut self, vertices: Vec<Vertex>, faces: Vec<(i32, i32, i32)>, tex_coord: Vec<[f32; 2]>, image: std::iter::Enumerate<imagine::png::PngRawChunkIter<'a>>){
+    // pub fn quick_redner<'a>(&mut self, vertices: Vec<Vertex>, faces: Vec<(i32, i32, i32)>, tex_coord: Vec<[f32; 2]>, image: std::iter::Enumerate<imagine::png::PngRawChunkIter<'a>>){
         
-        let mut pallete = Vec::<Vec4>::new();
-        let mut data = Vec::<Vec4>::new();
+    //     let mut pallete = Vec::<Vec4>::new();
+    //     let mut data = Vec::<Vec4>::new();
         
-        for (n, raw_chunk) in image {
-            let chunk_res = imagine::png::PngChunk::try_from(raw_chunk).unwrap();
-            match chunk_res {
-                imagine::png::PngChunk::sRGB(srgb) => {
+    //     for (n, raw_chunk) in image {
+    //         let chunk_res = imagine::png::PngChunk::try_from(raw_chunk).unwrap();
+    //         match chunk_res {
+    //             imagine::png::PngChunk::sRGB(srgb) => {
                     
-                },
-                imagine::png::PngChunk::PLTE(plte) => {
-                    for d in plte.entries() {
-                        pallete.push(Vec4::new(d[0] as f32, d[1] as f32, d[2] as f32, 0.0));
-                    }
-                },
-                imagine::png::PngChunk::tRNS(trns) => {
-                    for (a, c) in trns.to_alphas().iter().zip(pallete.iter_mut()) {
-                        c.w = *a as f32;
-                    }
-                },
-                imagine::png::PngChunk::IDAT(idat) => {
-                    let data_string = format!("{:?}", idat);
-                    for b in data_string.as_bytes() {
-                        data.push(pallete[*b as usize]);
-                    }
-                },
-                _ => continue
-            }
-        }
-        'test: loop{
-            let p_recv = self.thread_reciever.clone();
-            let mut recv = match p_recv.try_lock() {
-                Some(re) => re,
-                None => continue 'test
-            };
-            recv.push(ThreadData::QuickDraw(vertices.clone(), faces.clone(), tex_coord.clone(), data.clone()));
-            drop(recv);
-            break;
-        }
-    }
+    //             },
+    //             imagine::png::PngChunk::PLTE(plte) => {
+    //                 for d in plte.entries() {
+    //                     pallete.push(Vec4::new(d[0] as f32, d[1] as f32, d[2] as f32, 0.0));
+    //                 }
+    //             },
+    //             imagine::png::PngChunk::tRNS(trns) => {
+    //                 for (a, c) in trns.to_alphas().iter().zip(pallete.iter_mut()) {
+    //                     c.w = *a as f32;
+    //                 }
+    //             },
+    //             imagine::png::PngChunk::IDAT(idat) => {
+    //                 let data_string = format!("{:?}", idat);
+    //                 for b in data_string.as_bytes() {
+    //                     data.push(pallete[*b as usize]);
+    //                 }
+    //             },
+    //             _ => continue
+    //         }
+    //     }
+    //     'test: loop{
+    //         let p_recv = self.thread_reciever.clone();
+    //         let mut recv = match p_recv.try_lock() {
+    //             Some(re) => re,
+    //             None => continue 'test
+    //         };
+    //         recv.push(ThreadData::QuickDraw(vertices.clone(), faces.clone(), tex_coord.clone(), data.clone()));
+    //         drop(recv);
+    //         break;
+    //     }
+    // }
 
 }
 

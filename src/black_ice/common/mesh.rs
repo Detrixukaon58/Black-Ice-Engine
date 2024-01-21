@@ -2,16 +2,16 @@ use std::borrow::BorrowMut;
 use std::any::Any;
 use std::sync::Arc;
 use parking_lot::*;
-use crate::common::{vertex::*, transform::*, engine::gamesys::*};
-use crate::common::filesystem::files::*;
-use crate::common::{materials::*, *};
+use crate::black_ice::common::{vertex::*, transform::*, engine::gamesys::*};
+use crate::black_ice::common::filesystem::files::*;
+use crate::black_ice::common::{materials::*, *};
 
 use super::components::component_system::ConstructorDefinition;
 
 // TODO: Add layer reference so that correct pipelines can get the correct meshes
 /// Type of resource
 
-pub struct MeshObject {
+pub struct Surface {
     pub name: String,
     pub verts: Vec<Vec3>,
     pub faces: Vec<(i16, i16, i16)>, //made of 3 verts
@@ -22,14 +22,14 @@ pub struct MeshObject {
 }
 
 pub struct Mesh {
-    pub meshes: Vec<Arc<Mutex<MeshObject>>>,
+    pub surfaces: Vec<Arc<Mutex<Surface>>>,
     pub transform: matrices::Matrix34,
 }
 
 impl Mesh {
 
     pub fn triangles(&mut self) {
-        let mut mesh_object = MeshObject::new("triangle".to_string());
+        let mut mesh_object = Surface::new("triangle".to_string());
         
         mesh_object.define_point(Vec3::new(-25.0, -25.0, 0.0));
         mesh_object.define_point(Vec3::new(25.0, 25.0, 0.0));
@@ -44,11 +44,11 @@ impl Mesh {
         mesh_object.define_uv(1, (0.5, 0.5));
         mesh_object.define_uv(2, (1.0, 0.0));
 
-        self.meshes.push(Arc::new(Mutex::new(mesh_object)));
+        self.surfaces.push(Arc::new(Mutex::new(mesh_object)));
     }
 
     pub fn square(&mut self) {
-        let mut mesh_object = MeshObject::new("square".to_string());
+        let mut mesh_object = Surface::new("square".to_string());
         let v = 5.0;
         mesh_object.define_point(Vec3::new(-v, -v, 0.0));
         mesh_object.define_point(Vec3::new(v, -v, 0.0));
@@ -69,16 +69,16 @@ impl Mesh {
         mesh_object.define_uv(2, (1.0, 1.0));
         mesh_object.define_uv(3, (0.0, 1.0));
 
-        self.meshes.push(Arc::new(Mutex::new(mesh_object)));
+        self.surfaces.push(Arc::new(Mutex::new(mesh_object)));
     }
 
     pub fn new() -> Self {
-        Self { meshes: Vec::new(), transform: matrices::Matrix34::identity()}
+        Self { surfaces: Vec::new(), transform: matrices::Matrix34::identity()}
     }
 }
 
 pub struct MeshFile {
-    objects: Vec<Arc<Mutex<MeshObject>>>,
+    surfaces: Vec<Arc<Mutex<Surface>>>,
     pub mesh_file: FileSys,
     pub mesh_file_type: MFType,
     pub use_custom_materials: bool
@@ -120,10 +120,10 @@ pub trait MeshConstruct {
 }
 
 //region Mesh Reflection
-impl Base for MeshObject{}
+impl Base for Surface{}
 impl Base for MeshFile{}
 
-impl Reflection for MeshObject{
+impl Reflection for Surface{
     fn register_reflect(&'static self) -> Ptr<Register> 
     {
         let mut register = Box::new(Register::new(Box::new(self)));
@@ -171,7 +171,7 @@ impl Reflection for MeshFile {
 
 impl MeshInstanciate<MeshFile> for MeshFile {
     fn new() -> MeshFile {
-        return MeshFile {objects: Vec::<Arc<Mutex<MeshObject>>>::new(), mesh_file: FileSys::new(), mesh_file_type: MFType::UNKNOWN, use_custom_materials: false};
+        return MeshFile {surfaces: Vec::<Arc<Mutex<Surface>>>::new(), mesh_file: FileSys::new(), mesh_file_type: MFType::UNKNOWN, use_custom_materials: false};
     }
 }
 
@@ -208,7 +208,7 @@ impl MeshFileSys for MeshFile {
 
             let line = get_line(&buffer, i);
             let (line_type, split) = check_line(line);
-            let p_current = self.objects[current_object].clone();
+            let p_current = self.surfaces[current_object].clone();
             let mut obj = p_current.lock();
             match line_type{
                 Lntp::VERTEX =>         {
@@ -237,8 +237,8 @@ impl MeshFileSys for MeshFile {
                         obj.define_uv(i.try_into().unwrap(), texture_coords[i]);
                     }
 
-                    self.objects.push(components::component_system::ComponentRef_new(
-                        MeshObject { 
+                    self.surfaces.push(components::component_system::ComponentRef_new(
+                        Surface { 
                             name: String::from(split[1]), 
                             verts: Vec::new(), 
                             faces: Vec::new(), 
@@ -331,11 +331,11 @@ impl MeshFile {
     }
 
     pub fn as_mesh(&self) -> Mesh {
-        Mesh { meshes: self.objects.clone(), transform: matrices::Matrix34::identity()}
+        Mesh { surfaces: self.surfaces.clone(), transform: matrices::Matrix34::identity()}
     }
 }
 
-impl MeshConstruct for MeshObject {
+impl MeshConstruct for Surface {
 
     /// This gives a list of points that are in a mesh
     fn give_points(&mut self, verts: Vec<Vec3>) {
@@ -377,7 +377,7 @@ impl MeshConstruct for MeshObject {
     }
 }
 
-impl MeshObject {
+impl Surface {
     pub fn new(name: String) -> Self {
         Self { name: name.clone(), verts: Vec::new(), faces: Vec::new(), normals: Vec::new(), texture_coord: Vec::new(), material: Box::new(Material::new()), is_concave: false }
     }

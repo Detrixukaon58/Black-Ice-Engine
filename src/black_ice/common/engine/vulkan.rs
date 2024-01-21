@@ -14,8 +14,8 @@ use ash::vk::Handle;
 use sdl2::raw_window_handle::*;
 
 
-use crate::common::materials::*;
-use crate::common::filesystem::files::ShaderFile;
+use crate::black_ice::common::materials::*;
+use crate::black_ice::common::filesystem::files::ShaderFile;
 
 use super::gamesys::*;
 use super::pipeline::*;

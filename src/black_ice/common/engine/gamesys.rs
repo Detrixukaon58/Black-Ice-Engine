@@ -4,13 +4,13 @@ use std::{any::TypeId, future};
 use std::collections::HashMap;
 use std::any::Any;
 use std::string;
-use crate::common;
-use crate::common::angles::*;
-use crate::common::components::component_system::Constructor;
-use crate::common::engine::event_system::EventSystem;
-use crate::common::matrices::{M34, QuatToMat33};
-use crate::common::vertex::{V3New, V3Meth};
-use crate::common::{*, mesh::Mesh, components::{component_system::*, entity::{entity_system::*, *}}};
+use crate::black_ice::common;
+use crate::black_ice::common::angles::*;
+use crate::black_ice::common::components::component_system::Constructor;
+use crate::black_ice::common::engine::event_system::EventSystem;
+use crate::black_ice::common::matrices::{M34, QuatToMat33};
+use crate::black_ice::common::vertex::{V3New, V3Meth};
+use crate::black_ice::common::{*, mesh::Mesh, components::{component_system::*, entity::{entity_system::*, *}}};
 use std::sync::Arc;
 use colored::Colorize;
 use parking_lot::*;
@@ -18,7 +18,7 @@ use futures::join;
 use sdl2::*;
 
 use once_cell::sync::Lazy;
-use crate::common::engine::{pipeline::*, input, event_system};
+use crate::black_ice::common::engine::{pipeline::*, input, event_system};
 #[cfg(feature = "vulkan")] use ash::*;
 
 use super::input::InputSystem;
@@ -254,7 +254,6 @@ pub struct SDLValues {
     pub video: Arc<Mutex<sdl2::VideoSubsystem>>,
     pub window: Arc<Mutex<sdl2::video::Window>>,
     pub keybaord: Arc<Mutex<sdl2::keyboard::KeyboardUtil>>,
-    pub mouse: Arc<Mutex<sdl2::mouse::MouseUtil>>,
     pub cursor: Arc<Mutex<sdl2::mouse::Cursor>>,
 }
 
@@ -312,11 +311,8 @@ impl Game {
             .build()
             .expect("Failed to build window!")))
         ;
-        let mouse = Arc::new(Mutex::new(sdl.lock().mouse()));
         let keyboard = Arc::new(Mutex::new(sdl.lock().keyboard()));
         // mouse.lock().show_cursor(false);
-        mouse.lock().capture(true);
-        mouse.lock().warp_mouse_in_window(&window.lock(), x as i32 / 2, y as i32 / 2);
 
         let cursor = Arc::new(Mutex::new(sdl2::mouse::Cursor::new(
             &[1], 
@@ -335,7 +331,6 @@ impl Game {
             sdl: sdl,
             video: video,
             window: window,
-            mouse: mouse,
             keybaord: keyboard,
             cursor: cursor,
         };
@@ -402,6 +397,7 @@ impl Game {
 
             let pipe = PipelineParams {name: "Test Pipeline".to_string(), layer: 0};
 
+
             use mesh::*;
             let mesh_def = mesh_component::MeshComponent::default_constuctor_definition();
             unsafe {
@@ -431,6 +427,8 @@ impl Game {
                 if unsafe{Game::isExit()} {
                     break;
                 }
+                // Use this to handle threading in future maybe
+
                 let mut sdl = p_sdl.lock();
                 let mut pp_event_pump = sdl.event_pump();
                 drop(sdl);
@@ -483,26 +481,6 @@ impl Game {
 
     pub unsafe fn get_input_sys() -> Arc<Mutex<InputSystem>> {
         GAME.INPUT_SYS.clone()
-    }
-
-    pub fn toggle_cursor_visibility()
-    {   
-        unsafe{
-            let show_cursor = !GAME.show_cursor;
-            println!("show_cursor: {}", show_cursor);
-            GAME.sdl_values.mouse.lock().show_cursor(show_cursor);
-            GAME.sdl_values.mouse.lock().capture(!show_cursor);
-            GAME.show_cursor = show_cursor;
-            let p_rend_sys = Game::get_render_sys();
-            let mut rend_sys = p_rend_sys.read();
-            let p_window = rend_sys.window.clone();
-            let mut window = p_window.lock();
-            drop(rend_sys);
-            window.hide();
-            
-            window.show();
-            
-        }
     }
 
 }

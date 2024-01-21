@@ -5,8 +5,8 @@ use std::any::Any;
 use std::sync::Arc;
 use parking_lot::*;
 
-use crate::common::{mesh::*, engine::gamesys::*, vertex::*, angles::*, components::{component_system::*, entity::entity_system::{entity_event::*, *}}, transform::Transform, matrices::*};
-use crate::common::engine::pipeline::*;
+use crate::black_ice::common::{mesh::*, engine::gamesys::*, vertex::*, angles::*, components::{component_system::*, entity::entity_system::{entity_event::*, *}}, transform::Transform, matrices::*};
+use crate::black_ice::common::engine::pipeline::*;
 use colored::*;
 // This is a type of pointer that is assigned by the game engine. This means that it must be of trait Reflection
 
@@ -103,7 +103,7 @@ impl MeshComponent {
             
             let mut rend_sys = p_rend_sys.write();
             println!("{}", "Adding Mesh".red());
-            rend_sys.register_mesh(self.layer, self.mesh.clone());
+            
             println!("{}", "Added Mesh".blue());
         }
     }

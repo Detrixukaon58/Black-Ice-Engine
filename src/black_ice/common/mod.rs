@@ -23,7 +23,7 @@ pub const APP_DIR: &str = "F:\\Rust\\Program 1";
 
 pub fn concat_str(a: &str, b: &str) -> String {
 
-    let mut aa = a.clone().to_string();
+    let mut aa = a.to_string();
     aa.push_str(b);
 
     return aa;
