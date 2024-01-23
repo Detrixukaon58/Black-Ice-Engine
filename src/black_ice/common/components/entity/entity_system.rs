@@ -501,7 +501,7 @@ impl EntitySystem {
             }
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
-        while !Game::isExit() {
+        while !Env::isExit() {
             let mut this = p_this.lock();
             let p_recv = this.thread_reciever.clone();
             let p_entities = this.p_entities.clone();

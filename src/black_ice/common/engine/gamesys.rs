@@ -258,7 +258,7 @@ pub struct SDLValues {
 }
 
 // This is always static(mustn't be created non-statically)s
-pub struct Game {
+pub struct Env {
 
     pub gameName: Arc<Mutex<String>>,
     pub REGISTRAR: components::component_system::ComponentRef<Registry>,
@@ -273,10 +273,11 @@ pub struct Game {
     show_cursor: bool,
 }
 
-impl Game {
+impl Env {
     pub unsafe fn isExit() -> bool {
+        let env = Env::get_env();
         'run: loop {
-            let status = match GAME.STATUS.try_lock() {
+            let status = match env.STATUS.try_lock() {
                 Some(v) => v,
                 None => continue 'run
             };
@@ -284,7 +285,7 @@ impl Game {
         }
     }
 
-    pub fn new_sdl() -> Game{
+    pub fn new_sdl() -> Env{
         let reg = components::component_system::ComponentRef_new(Registry {reg: Lazy::new(
             || {HashMap::<Box<&str>,Box<Register>>::new()}
         )});
@@ -334,7 +335,7 @@ impl Game {
             keybaord: keyboard,
             cursor: cursor,
         };
-        Game { 
+        Env { 
             gameName: Arc::new(Mutex::new(String::from("Game Name"))), 
             REGISTRAR: reg, 
             RENDER_SYS: render_sys, 
@@ -424,7 +425,7 @@ impl Game {
             let mut p_sdl = RenderPipelineSystem::get_sdl();
             
             loop{
-                if unsafe{Game::isExit()} {
+                if unsafe{Env::isExit()} {
                     break;
                 }
                 // Use this to handle threading in future maybe
@@ -452,9 +453,9 @@ impl Game {
     }
 
     pub unsafe fn set_status(status: StatusCode){
-        *GAME.STATUS.lock() = status.clone();
-        let p_rend = Game::get_render_sys().clone();
-        let p_ent = Game::get_entity_sys().clone();
+        *Env::get_env().STATUS.lock() = status.clone();
+        let p_rend = Env::get_render_sys().clone();
+        let p_ent = Env::get_entity_sys().clone();
 
         RenderPipelineSystem::send_status(p_rend, status.clone());
         EntitySystem::send_status(p_ent, status.clone());
@@ -468,21 +469,28 @@ impl Game {
 
     pub unsafe fn cursor_is_hidden() -> bool 
     {
-        GAME.show_cursor
+        Env::get_env().show_cursor
     }
 
     pub unsafe fn get_render_sys() -> Arc<RwLock<RenderPipelineSystem>> {
-        GAME.RENDER_SYS.clone()
+        Env::get_env().RENDER_SYS.clone()
     }
 
     pub unsafe fn get_entity_sys() -> components::component_system::ComponentRef<EntitySystem> {
-        GAME.ENTITY_SYS.clone()
+        Env::get_env().ENTITY_SYS.clone()
     }
 
     pub unsafe fn get_input_sys() -> Arc<Mutex<InputSystem>> {
-        GAME.INPUT_SYS.clone()
+        Env::get_env().INPUT_SYS.clone()
+    }
+
+    pub fn get_env() -> &'static mut Env {
+        unsafe{
+        
+        ENV.as_mut().expect("Gamehas not been initialized!!")
+        }
     }
 
 }
 
-pub static mut GAME: Lazy<Game> = Lazy::new( || {Game::new_sdl()});
+pub static mut ENV: Lazy<Option<Env>> = Lazy::new( || {None});

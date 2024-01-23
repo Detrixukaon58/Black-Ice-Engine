@@ -1,6 +1,6 @@
 use crate::black_ice::common::{vertex::*, angles::*, matrices::*};
 
-use super::{components::entity::entity_system::*, engine::gamesys::Game};
+use super::{components::entity::entity_system::*, engine::gamesys::Env};
 use std::sync::*;
 
 #[derive(Clone)]
@@ -75,7 +75,7 @@ impl Transform {
     pub fn get_entity(&self) -> Option<EntityPtr> {
         if let Some(p_entity) = self.pp_entity.as_ref(){
             unsafe {
-                let p_entsy = Game::get_entity_sys();
+                let p_entsy = Env::get_entity_sys();
                 let mut ent_sys = p_entsy.lock();
                 return ent_sys.get_entity(*p_entity);
             }

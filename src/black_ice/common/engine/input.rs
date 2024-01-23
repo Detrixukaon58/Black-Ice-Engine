@@ -101,7 +101,7 @@ impl InputSystem {
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
 
-        while !Game::isExit() {
+        while !Env::isExit() {
             
             let this = p_this.lock();
             let input_buffer = this.input_buffer.clone();
@@ -140,7 +140,7 @@ impl InputSystem {
     pub fn get_cursor() -> (Avg<f32>, Avg<f32>) {
         unsafe
         {
-            let p_input = Game::get_input_sys();
+            let p_input = Env::get_input_sys();
             let mut input = p_input.lock();
             (input.cursor_x.clone(), input.cursor_y.clone())
         }
@@ -149,7 +149,7 @@ impl InputSystem {
     pub fn reset_cursor() {
         unsafe
         {
-            let p_input = Game::get_input_sys();
+            let p_input = Env::get_input_sys();
             let mut input = p_input.lock();
             input.cursor_x.reset();
             input.cursor_y.reset();

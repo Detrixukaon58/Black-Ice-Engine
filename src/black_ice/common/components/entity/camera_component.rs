@@ -120,7 +120,7 @@ impl CameraComponent {
     fn init(&mut self) {
         unsafe{
             
-            let p_render_sys = Game::get_render_sys();
+            let p_render_sys = Env::get_render_sys();
             let mut render_sys = p_render_sys.write();
             self.camera_id = render_sys.register_camera(self.layer);
             render_sys.update_camera(self.camera_id, &self.projection, &self.p_entity.get_world_tm(), self.up, self.forward);
@@ -129,8 +129,8 @@ impl CameraComponent {
                 //render_sys.camera_set_render_texture(self.camera_id, , width, height)
             }
             else{
-                let width = GAME.window_x as f32;
-                let height = GAME.window_y as f32;
+                let width = Env::get_env().window_x as f32;
+                let height = Env::get_env().window_y as f32;
                 let depth = 1000.0;
                 let ratio = width / height;
                 // self.projection.ortho_projection(- width / 2.0, width / 2.0, height/ 2.0, -height/ 2.0, -depth / 2.0, depth / 2.0);
@@ -144,7 +144,7 @@ impl CameraComponent {
     fn update(&mut self) {
         unsafe{
             
-            let p_render_sys = Game::get_render_sys();
+            let p_render_sys = Env::get_render_sys();
             let mut render_sys = p_render_sys.write();
             render_sys.update_camera(self.camera_id, &self.projection, &(self.view_transform), self.up, self.forward);
             

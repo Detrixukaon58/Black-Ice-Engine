@@ -99,7 +99,7 @@ impl MeshComponent {
 
     pub fn init_mesh(&self) {
         unsafe{
-            let p_rend_sys = Game::get_render_sys();
+            let p_rend_sys = Env::get_render_sys();
             
             let mut rend_sys = p_rend_sys.write();
             println!("{}", "Adding Mesh".red());

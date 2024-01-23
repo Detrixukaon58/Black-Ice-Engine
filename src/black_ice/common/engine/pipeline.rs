@@ -143,7 +143,7 @@ unsafe impl Sync for RenderPipelineSystem {}
 impl RenderPipelineSystem{
     // TODO: Fix these so that it doesn't borrow self!!
     pub unsafe fn resgister_pipeline(params: PipelineParams) -> i32{
-        let p_this = Game::get_render_sys().clone();
+        let p_this = Env::get_render_sys().clone();
         let mut this = p_this.write();
         let id = this.counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let p = Arc::new(Mutex::new(Pipeline {
@@ -213,7 +213,7 @@ impl RenderPipelineSystem{
     }
 
     pub unsafe fn register_shader_stage(shader_stage: ShaderStage) -> usize{
-        let mut p_rend = Game::get_render_sys();
+        let mut p_rend = Env::get_render_sys();
         let mut rend = p_rend.write();
         let mut i = 0;
         for stages in &rend.shader_stages_data {
@@ -228,7 +228,7 @@ impl RenderPipelineSystem{
     }
 
     pub unsafe fn update_shader(shader_data: ShaderData, shader_ptr: usize) {
-        let mut p_rend = Game::get_render_sys();
+        let mut p_rend = Env::get_render_sys();
         let mut rend = p_rend.write();
         let mut i = 0;
         let mut stage = rend.shader_stages_data.get_mut(shader_ptr).expect("Shader pointer out of range!!");
@@ -323,7 +323,7 @@ impl RenderPipelineSystem{
             drop(this);
             println!("{}", p_this.is_locked());
 
-            while !Game::isExit() {
+            while !Env::isExit() {
                 let this = match p_this.try_read() {
                     Some(v) => v,
                     None => {
@@ -420,14 +420,14 @@ impl RenderPipelineSystem{
 
     pub unsafe fn set_mouse_position(x: i32, y: i32)
     {
-        let p_rend_sys = Game::get_render_sys();
+        let p_rend_sys = Env::get_render_sys();
         let mut rend_sys = p_rend_sys.read();
         let window = rend_sys.window.lock();
     }
 
     pub fn get_sdl() -> Arc<Mutex<sdl2::Sdl>> {
         unsafe{
-            let p_rend = Game::get_render_sys();
+            let p_rend = Env::get_render_sys();
             let rend = p_rend.read();
             rend.sdl.clone()
         }

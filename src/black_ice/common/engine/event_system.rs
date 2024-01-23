@@ -3,7 +3,7 @@
 use std::{sync::Arc, thread::JoinHandle, collections::HashMap};
 use colored::Colorize;
 use parking_lot::*;
-use crate::black_ice::common::{*, engine::pipeline::RenderPipelineSystem};
+use crate::black_ice::common::{*, engine::pipeline::RenderPipelineSystem, Env};
 use sdl2::{*, sys::*, mouse::MouseButton};
 
 // This needs to handle all types of events depending on what system it is currently being built for
@@ -50,7 +50,7 @@ impl EventSystem {
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
 
-        while !Game::isExit() {
+        while !Env::isExit() {
             let mut this = p_this.lock();
             let mut event_pump = this.event_pump.clone();
             this.event_pump.clear();
@@ -58,15 +58,15 @@ impl EventSystem {
             while let Some(event) = event_pump.pop() {
                 match *event {
                     event::Event::Quit {..} =>  {
-                        unsafe{Game::set_status(StatusCode::CLOSE);}
+                        unsafe{Env::set_status(StatusCode::CLOSE);}
                         println!("Close sent");
                         
                     }
                     event::Event::Window { timestamp, window_id, win_event } => {
                         match win_event {
                             event::WindowEvent::Resized(x, y) => {
-                                GAME.window_x = x as u32;
-                                GAME.window_y = y as u32;
+                                Env::get_env().window_x = x as u32;
+                                Env::get_env().window_y = y as u32;
                             }
                             _ => {}
                         }

@@ -4,8 +4,6 @@
 // use std::{mem::{size_of_val, size_of}, str::SplitWhitespace, ffi::{CString, OsString}, any::TypeId, fs, future::*};
 // use bytemuck::try_cast_ref;
 
-use black_ice_lib;
-
 // type Vertex = [f32; 3];
 
 // const VETRICES: [Vertex; 3] = [[-0.5, -0.5, 0.0], [0.5, -0.5, 0.0], [0.0, 0.5, 0.0]];
@@ -378,9 +376,26 @@ use black_ice_lib;
 //     let game : libloading::Symbol<Lazy<>>
 // }
 
+use colored::Colorize;
 
+pub unsafe fn init_game_env() {
+    let mut exe_path = std::env::current_exe().expect("Failed to get executable path!!");
+    let mut path = exe_path.parent().expect("Failed to get executable path!!");
+    let mut path_str = path.to_str().expect("Failed to read executable path!!").to_string();
+    #[cfg(target_os = "windows")]
+    let mut lib_path = path_str.to_owned() + "\\black_ice_lib.dll";
+    #[cfg(target_os = "linux")]
+    let mut lib_path = path_str.to_owned() + "/black_ice_lib.so";
+    #[cfg(target_os = "mac")]
+    let mut lib_path = path_str.to_owned() + "/black_ice_lib.dynlib";
+    let lib = libloading::Library::new(lib_path).expect("Failed to load engine library!!");
+    let game_init : libloading::Symbol<unsafe extern fn()> = lib.get(b"init_game_env\0").expect("Failed to get init_game_env function. Maybe the engine is corrupted?");
+    game_init();
+}
+
+// F:\Rust\Program 1\target\debug\black_ice_lib.dll
 fn main(){
     unsafe{
-        black_ice_lib::black_ice::common::engine::gamesys::GAME.init();
+        init_game_env();
     }
 }

@@ -107,7 +107,7 @@ impl Image {
 
         let image_idat = imagine::png::PngRawChunkIter::new(&image_bytes).enumerate();
         unsafe{
-            let mut p_render_sys = Game::get_render_sys().clone();
+            let mut p_render_sys = Env::get_render_sys().clone();
             let mut render_sys = p_render_sys.write();
             
         }

@@ -98,7 +98,7 @@ impl OGlRender for Pipeline {
 
                 }
                 else{
-                    driver.gl.as_ref().unwrap().Viewport(0, 0, GAME.window_x as i32, GAME.window_y as i32);
+                    driver.gl.as_ref().unwrap().Viewport(0, 0, Env::get_env().window_x as i32, Env::get_env().window_y as i32);
                 }
                 // println!("{}", pipeline.meshs.len());
                 
@@ -118,6 +118,7 @@ impl OGlRender for Pipeline {
                     //     mesh.draw(gl, &camera);
 
                     // }
+                    // go through all data_sets of this current pipeline!!
                     let window = p_window.lock();
                     window.gl_swap_window();
             }
