@@ -11,14 +11,22 @@ use super::components::component_system::ConstructorDefinition;
 // TODO: Add layer reference so that correct pipelines can get the correct meshes
 /// Type of resource
 
+#[derive(PartialEq)]
+pub enum SurfaceType {
+    TRIANGLES,
+    LINES,
+    POINTS
+}
+
 pub struct Surface {
     pub name: String,
     pub verts: Vec<Vec3>,
-    pub faces: Vec<(i16, i16, i16)>, //made of 3 verts
+    pub indices: Vec<i16>, //made of 3 verts
     pub normals: Vec<(i16, Vec3)>,
     pub texture_coord: Vec<(i16, (f32, f32))>,
     pub material: Box<Material>,
-    pub is_concave: bool
+    pub is_concave: bool,
+    pub surface_type: SurfaceType
 }
 
 pub struct Mesh {
@@ -29,45 +37,45 @@ pub struct Mesh {
 impl Mesh {
 
     pub fn triangles(&mut self) {
-        let mut mesh_object = Surface::new("triangle".to_string());
+        let mut mesh_object = Surface::new("triangle".to_string(), SurfaceType::TRIANGLES);
         
-        mesh_object.define_point(Vec3::new(-25.0, -25.0, 0.0));
-        mesh_object.define_point(Vec3::new(25.0, 25.0, 0.0));
-        mesh_object.define_point(Vec3::new(50.0, 0.0, 0.0));
+        mesh_object.add_point(Vec3::new(-25.0, -25.0, 0.0));
+        mesh_object.add_point(Vec3::new(25.0, 25.0, 0.0));
+        mesh_object.add_point(Vec3::new(50.0, 0.0, 0.0));
 
-        mesh_object.define_face(0, 1, 2);
-        mesh_object.define_normal(0, Vec3::new(0.0, 0.0, 1.0));
-        mesh_object.define_normal(1, Vec3::new(0.0, 0.0, 1.0));
-        mesh_object.define_normal(2, Vec3::new(0.0, 0.0, 1.0));
+        mesh_object.add_face(0, 1, 2);
+        mesh_object.add_normal(0, Vec3::new(0.0, 0.0, 1.0));
+        mesh_object.add_normal(1, Vec3::new(0.0, 0.0, 1.0));
+        mesh_object.add_normal(2, Vec3::new(0.0, 0.0, 1.0));
 
-        mesh_object.define_uv(0, (0.0, 0.0));
-        mesh_object.define_uv(1, (0.5, 0.5));
-        mesh_object.define_uv(2, (1.0, 0.0));
+        mesh_object.add_uv(0, (0.0, 0.0));
+        mesh_object.add_uv(1, (0.5, 0.5));
+        mesh_object.add_uv(2, (1.0, 0.0));
 
         self.surfaces.push(Arc::new(Mutex::new(mesh_object)));
     }
 
     pub fn square(&mut self) {
-        let mut mesh_object = Surface::new("square".to_string());
+        let mut mesh_object = Surface::new("square".to_string(), SurfaceType::TRIANGLES);
         let v = 5.0;
-        mesh_object.define_point(Vec3::new(-v, -v, 0.0));
-        mesh_object.define_point(Vec3::new(v, -v, 0.0));
-        mesh_object.define_point(Vec3::new(v, v, 0.0));
+        mesh_object.add_point(Vec3::new(-v, -v, 0.0));
+        mesh_object.add_point(Vec3::new(v, -v, 0.0));
+        mesh_object.add_point(Vec3::new(v, v, 0.0));
 
-        mesh_object.define_face(0, 1, 2);
-        mesh_object.define_normal(0, Vec3::new(0.0, 0.0, 1.0));
-        mesh_object.define_normal(1, Vec3::new(0.0, 0.0, 1.0));
-        mesh_object.define_normal(2, Vec3::new(0.0, 0.0, 1.0));
+        mesh_object.add_face(0, 1, 2);
+        mesh_object.add_normal(0, Vec3::new(0.0, 0.0, 1.0));
+        mesh_object.add_normal(1, Vec3::new(0.0, 0.0, 1.0));
+        mesh_object.add_normal(2, Vec3::new(0.0, 0.0, 1.0));
 
-        mesh_object.define_point(Vec3::new(-v, v, 0.0));
+        mesh_object.add_point(Vec3::new(-v, v, 0.0));
 
-        mesh_object.define_face(2, 3, 0);
-        mesh_object.define_normal(3, Vec3::new(0.0, 0.0, 1.0));
+        mesh_object.add_face(2, 3, 0);
+        mesh_object.add_normal(3, Vec3::new(0.0, 0.0, 1.0));
 
-        mesh_object.define_uv(0, (0.0, 0.0));
-        mesh_object.define_uv(1, (1.0, 0.0));
-        mesh_object.define_uv(2, (1.0, 1.0));
-        mesh_object.define_uv(3, (0.0, 1.0));
+        mesh_object.add_uv(0, (0.0, 0.0));
+        mesh_object.add_uv(1, (1.0, 0.0));
+        mesh_object.add_uv(2, (1.0, 1.0));
+        mesh_object.add_uv(3, (0.0, 1.0));
 
         self.surfaces.push(Arc::new(Mutex::new(mesh_object)));
     }
@@ -112,11 +120,12 @@ pub trait MeshFileSys {
 }
 
 pub trait MeshConstruct {
-    fn give_points(&mut self, verts: Vec<Vec3>);
-    fn define_point(&mut self, vert: Vec3) -> i16;
-    fn define_face(&mut self, vert1: i16, vert2: i16, vert3: i16) -> i16;
-    fn define_normal(&mut self, index: i16, normal: Vec3);
-    fn define_uv(&mut self, index: i16, coord: (f32, f32));
+    fn add_points(&mut self, verts: Vec<Vec3>);
+    fn add_point(&mut self, vert: Vec3) -> i16;
+    fn add_face(&mut self, vert1: i16, vert2: i16, vert3: i16);
+    fn add_edge(&mut self, vert1: i16, vert2: i16);
+    fn add_normal(&mut self, index: i16, normal: Vec3);
+    fn add_uv(&mut self, index: i16, coord: (f32, f32));
 }
 
 //region Mesh Reflection
@@ -131,8 +140,8 @@ impl Reflection for Surface{
         register.addProp(Property { 
             name: Box::new("faces"),
             desc: Box::new("The Faces of the object"), 
-            reference: Box::new(&self.faces), 
-            ref_type: self.faces.type_id()
+            reference: Box::new(&self.indices), 
+            ref_type: self.indices.type_id()
         });
         register.addProp(Property { 
             name: Box::new("verts"), 
@@ -213,7 +222,7 @@ impl MeshFileSys for MeshFile {
             match line_type{
                 Lntp::VERTEX =>         {
                     let vertex = Vec3::new(split[1].parse::<f32>().unwrap(), split[2].parse::<f32>().unwrap(), split[3].parse::<f32>().unwrap());
-                    obj.define_point(vertex);
+                    obj.add_point(vertex);
                 },
                 Lntp::VERTEX_TEXTURE => {texture_coords.push((split[1].parse::<f32>().unwrap(), split[2].parse::<f32>().unwrap()));},
                 Lntp::VERTEX_NORMAL => {normals.push(Vec3::new(split[1].parse::<f32>().unwrap(), split[2].parse::<f32>().unwrap(), split[3].parse::<f32>().unwrap()))},
@@ -227,25 +236,26 @@ impl MeshFileSys for MeshFile {
                         let mut a = face_vertices[0].split('/');
                         let mut b = face_vertices[1].split('/');
                         let mut c = face_vertices[2].split('/');
-                        obj.define_face(a.nth(0).unwrap().parse::<i16>().unwrap(), b.nth(0).unwrap().parse::<i16>().unwrap(), c.nth(0).unwrap().parse::<i16>().unwrap());
+                        obj.add_face(a.nth(0).unwrap().parse::<i16>().unwrap(), b.nth(0).unwrap().parse::<i16>().unwrap(), c.nth(0).unwrap().parse::<i16>().unwrap());
                     }
                 },
                 Lntp::MTLLIB => {},
                 Lntp::OBJECT_NAME => {
                     for i in 0..(normals.len()) {
-                        obj.define_normal(i.try_into().unwrap(), normals[i]);
-                        obj.define_uv(i.try_into().unwrap(), texture_coords[i]);
+                        obj.add_normal(i.try_into().unwrap(), normals[i]);
+                        obj.add_uv(i.try_into().unwrap(), texture_coords[i]);
                     }
 
                     self.surfaces.push(components::component_system::ComponentRef_new(
                         Surface { 
                             name: String::from(split[1]), 
                             verts: Vec::new(), 
-                            faces: Vec::new(), 
+                            indices: Vec::new(), 
                             normals: Vec::new(), 
                             texture_coord: Vec::new(), 
                             material: Box::new(Material::new()), 
-                            is_concave: false 
+                            is_concave: false,
+                            surface_type: SurfaceType::TRIANGLES
                         }));
                     current_object += 1;
 
@@ -338,7 +348,7 @@ impl MeshFile {
 impl MeshConstruct for Surface {
 
     /// This gives a list of points that are in a mesh
-    fn give_points(&mut self, verts: Vec<Vec3>) {
+    fn add_points(&mut self, verts: Vec<Vec3>) {
         let &mut length = self.verts.len().borrow_mut();
         self.verts.append(&mut verts.clone());
         for i in 0..(&verts.len() - 1){
@@ -346,12 +356,16 @@ impl MeshConstruct for Surface {
             self.texture_coord.push(((length + i).try_into().unwrap(), (0.0, 0.0)));
         }
     }
-    fn define_face(&mut self, vert1: i16, vert2: i16, vert3: i16) -> i16 {
-        self.faces.push((vert1, vert2, vert3));
-        return (self.faces.len() - 1).try_into().unwrap();
+    fn add_face(&mut self, vert1: i16, vert2: i16, vert3: i16) {
+        assert!(self.surface_type == SurfaceType::TRIANGLES);// Must be triangles for 
+        self.indices.append(&mut vec![vert1, vert2, vert3]);
     }
 
-    fn define_normal(&mut self, index: i16, normal: Vec3) {
+    fn add_edge(&mut self, vert1: i16, vert2: i16){
+
+    }
+
+    fn add_normal(&mut self, index: i16, normal: Vec3) {
         for norm in &mut self.normals{
             if norm.0 == index {
                 norm.1 = normal.clone();
@@ -360,14 +374,14 @@ impl MeshConstruct for Surface {
         }
     }
 
-    fn define_point(&mut self, vert: Vec3) -> i16 {
+    fn add_point(&mut self, vert: Vec3) -> i16 {
         self.verts.push(vert);
         self.normals.push(((self.verts.len() - 1).try_into().unwrap(), Vec3::new(0, 0, 0)));
         self.texture_coord.push(((self.verts.len() - 1).try_into().unwrap(), (0.0, 0.0)));
         return (self.verts.len() - 1).try_into().unwrap();
     }
 
-    fn define_uv(&mut self, index: i16, coord: (f32, f32)) {
+    fn add_uv(&mut self, index: i16, coord: (f32, f32)) {
         for uv in &mut self.texture_coord {
             if uv.0 == index {
                 uv.1 = coord;
@@ -378,7 +392,7 @@ impl MeshConstruct for Surface {
 }
 
 impl Surface {
-    pub fn new(name: String) -> Self {
-        Self { name: name.clone(), verts: Vec::new(), faces: Vec::new(), normals: Vec::new(), texture_coord: Vec::new(), material: Box::new(Material::new()), is_concave: false }
+    pub fn new(name: String, surface_type: SurfaceType) -> Self {
+        Self { name: name.clone(), verts: Vec::new(), indices: Vec::new(), normals: Vec::new(), texture_coord: Vec::new(), material: Box::new(Material::new()), is_concave: false, surface_type: surface_type }
     }
 }

@@ -6,7 +6,7 @@ use crate::black_ice::common::{components::{component_system::*, entity::entity_
 
 
 pub struct Image {
-    image_file: filesystem::files::AssetPath,
+    image_file: filesystem::files::Asset,
     p_Entity: EntityPtr
 }
 
@@ -20,7 +20,7 @@ impl engine::gamesys::Reflection for Image {
             name: Box::new("image_file"), 
             desc: Box::new("Path to image file"), 
             reference: Box::new(&self.image_file), 
-            ref_type: std::any::TypeId::of::<AssetPath>() });
+            ref_type: std::any::TypeId::of::<Asset>() });
 
         Ptr { b: register }
     }
@@ -59,7 +59,7 @@ impl Constructor<Image> for Image {
         let path = String::from(map.get("path").unwrap().as_str().unwrap());
         println!("{}", path);
         Some(ComponentRef_new(Self {
-            image_file: AssetPath::new(path.clone()),
+            image_file: Asset::from_path(path.clone()),
             p_Entity: entity.clone()
         }))
 

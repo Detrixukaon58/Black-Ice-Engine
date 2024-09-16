@@ -36,6 +36,7 @@ colored = { version = "*"}
 parking_lot = {version = "*"}
 openal = {version = "*"}
 libloading = "*"
+fancy-regex = "*"
 
 [features]
 vulkan = ["dep:ash", "dep:ash-window", "sdl2/raw-window-handle"]

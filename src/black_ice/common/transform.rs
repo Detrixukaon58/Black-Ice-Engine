@@ -35,7 +35,7 @@ impl Transform {
         let mut mat = Matrix34::identity();
         mat.translate(position);
         mat.rotate(rotation);
-        // mat.scale(scale);
+        mat.scale(scale);
         Self { position: position, rotation: rotation, scale: scale, world_matrix: mat , parent_transform: None, pp_entity: None}
     }
 

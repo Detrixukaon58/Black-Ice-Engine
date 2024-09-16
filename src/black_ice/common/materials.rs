@@ -1,5 +1,6 @@
 #![allow(unused)]
-use std::{any::*, collections::HashMap};
+
+use std::{any::*, collections::HashMap, option};
 use parking_lot::*;
 use shaderc::ShaderKind;
 use crate::black_ice::common::{filesystem::files::*, engine::gamesys::*, *};
@@ -40,66 +41,166 @@ pub enum ShaderType {
     Compute,
     Fragment,
     Vertex,
+    Infer,
 }
 
+#[derive(Clone)]
 pub struct ShaderData {
     pub data: Arc<Mutex<Vec<u8>>>,
-    pub compiled_data: Option<Arc<Mutex<Vec<u8>>>>,
+    pub compiled_data: Option<Arc<Mutex<Vec<u32>>>>,
 }
 
 impl ShaderData {
     fn include_shaders() -> glsl_include::Context<'static> {
-        let path: String = APP_DIR.to_owned() + "\\assets\\shaders\\";
+        let engine_path: String = Asset::new();
+        let asset_path: String = Asset::new();
+        
+
 
         let mut context: glsl_include::Context = glsl_include::Context::new();
+
+        // go through the directory and find all includable shaders!!!
+
+        // Includable shader:
+        // .glsl
+        // .hlsl
+        // 
+        
+
+
+
         return context;
     }
 
-    pub fn compile(&mut self, shaderc_kind: ShaderKind, shader_lang:ShaderLang) {
+    pub fn compile(&mut self, shader_type: ShaderType, shader_lang: ShaderLang, name: String){
+        let compiler = shaderc::Compiler::new().expect("Failed to init shaderc!!");
+        let mut data_ptr = self.data.clone();
+        let mut data = data_ptr.lock();
+        let mut text = std::str::from_utf8(&data).expect("Data is not of proper UTF8 form!!");
+        let mut context = ShaderData::include_shaders();
+        let mut temp = context.expand(text).expect("Failed to include neseccary shaders!!");
+
+        let mut options = shaderc::CompileOptions::new().expect("Failed to create shader options!!");
+        options.set_auto_map_locations(true);
+        options.set_auto_bind_uniforms(true);
+        options.set_source_language(shaderc::SourceLanguage::GLSL);
         
+        #[cfg(feature = "opengl")] options.set_target_env(shaderc::TargetEnv::OpenGL, shaderc::EnvVersion::OpenGL4_5 as u32);
+        #[cfg(feature = "vulkan")] options.set_target_env(shaderc::TargetEnv::Vulkan, shaderc::EnvVersion::Vulkan1_0 as u32);
+
+        let shader_kind = match shader_type {
+            ShaderType::Compute => ShaderKind::Compute,
+            ShaderType::Fragment => ShaderKind::Fragment,
+            ShaderType::Vertex => ShaderKind::Vertex,
+            ShaderType::Infer => ShaderKind::InferFromSource,
+        };
+
+        let artifact = compiler.compile_into_spirv(temp.as_str(), shader_kind, name.as_str(), "main", Some(&options));
+        let temp = artifact.expect("Failed to compile shader!!!");
+
+        self.compiled_data = Some(Arc::new(Mutex::new(temp.as_binary().to_vec())));
     }
+
+    pub fn infer_shader_type(&mut self) -> ShaderType {
+        let re = fancy_regex::Regex::new(r"(?<=#pragma shader_type\()\b[a-z]+\b(?=\))").unwrap();
+        let mut data = self.data.lock();
+        let text = std::str::from_utf8(data.as_slice()).expect("Failed to parse shader data!!");
+        
+        let mut capture = re.captures(text).expect("Failed to start regex!!").expect("Failed to get capture!!");
+        let mut value = capture.get(0).expect("No shader type defined for shader!! Please add \"#pragma shader_type(shader type)\" to your file!!").as_str();
+        
+        match value {
+            "vertex" => ShaderType::Vertex,
+            "fragment" => ShaderType::Fragment,
+            "compute" => ShaderType::Compute,
+            _ => panic!("Shader type not defined!!")
+        }
+
+    }
+
+    pub fn get_hlsl_shaders(&mut self) -> Vec<(String, ShaderType)> {
+        let re = fancy_regex::Regex::new(r"(?<=#pragma )\b[a-z]+\b \b[a-z,A-Z]+\b").expect("Failed to init regex!!");
+        let mut data = self.data.lock();
+        let text = std::str::from_utf8(data.as_slice()).expect("Failed to parse shader data!!!");
+
+        let mut result = vec![];
+
+        for c in re.captures_iter(text) {
+            let capture = c.expect("Failed to get capture");
+            let value = capture.get(0).expect("HLSL shader has no shader functions defined!! use \"#pragma function_name shader_type\" to declare the shader functions!!");
+            result.push(value.as_str());
+        }
+
+        let mut result2 = vec![];
+
+        for v in result {
+            let mut temp: Vec<&str> = v.split(" ").collect();
+            let name = String::from(temp[1]);
+            let mut shader_type = ShaderType::Compute;
+            match temp[0]{
+                "vertex" => shader_type = ShaderType::Vertex,
+                "fragment" => shader_type = ShaderType::Fragment,
+                "compute" => shader_type = ShaderType::Compute,
+                _ => continue,
+            }
+            result2.push((name, shader_type));
+        }
+
+        result2
+    }
+
+    pub fn hlsl_compile(&mut self, name:String) {
+        let shader_entries = self.get_hlsl_shaders();
+        let compiler = shaderc::Compiler::new().expect("Failed to get compiler!!");
+        let mut options = shaderc::CompileOptions::new().expect("Failed to load compiler options!!");
+        options.set_source_language(shaderc::SourceLanguage::HLSL);
+        options.set_hlsl_io_mapping(true);
+        options.set_hlsl_offsets(true);
+        #[cfg(feature = "opengl")] options.set_target_env(shaderc::TargetEnv::OpenGL, shaderc::EnvVersion::OpenGL4_5 as u32);
+        #[cfg(feature = "vulkan")] options.set_target_env(shaderc::TargetEnv::Vulkan, shaderc::EnvVersion::Vulkan1_0 as u32);
+
+        options.set_auto_bind_uniforms(true);
+        options.set_auto_map_locations(true);
+
+        let mut data = self.data.lock();
+        
+        let artifact = compiler.compile_into_spirv(std::str::from_utf8(data.as_slice()).expect("Failed to parse shader code!!"), ShaderKind::InferFromSource, &name, "main", Some(&options));
+        let temp = artifact.expect("Failed to compile shader!!");
+
+        self.compiled_data = Some(Arc::new(Mutex::new(temp.as_binary().to_vec())));
+    } 
 }
 
 #[derive(Copy, Clone)]
 pub enum ShaderLang {
     Glsl,
     Hlsl,
-    Pgsl,
+    Pssl,
     GodotShader,
 }
 
+#[derive(Clone)]
 pub struct ShaderStage {
     pub stage_name: String,
     pub shader_data: ShaderData,
     pub shader_type: ShaderType,
     pub shader_lang: ShaderLang,
+    pub shader_inout: Vec<(String, ShaderDataTypeClean, ShaderDataHint)>
 }
 
 impl ShaderStage {
-    fn new(shader_name: String, shader_type: ShaderType, shader_lang: ShaderLang, mut shader_data: ShaderData) -> ShaderStage {
+    fn new(shader_name: String, shader_type: ShaderType, shader_lang: ShaderLang, mut shader_data: ShaderData, shader_inout: Vec<(String, ShaderDataTypeClean, ShaderDataHint)>) -> ShaderStage {
         
         let shader_kind = match (shader_type) {
             ShaderType::Fragment => shaderc::ShaderKind::Fragment,
             ShaderType::Vertex => shaderc::ShaderKind::Vertex,
             ShaderType::Compute => shaderc::ShaderKind::Compute,
-        };
-
-        unsafe {
-            shader_data.compile(shader_kind, shader_lang);
-            ShaderStage {stage_name: shader_name, shader_data: shader_data, shader_type:shader_type, shader_lang:shader_lang}
-        }
-    }
-
-    fn new_from_compiled(shader_name: String, shader_type: ShaderType, shader_lang: ShaderLang, mut shader_data: ShaderData) -> ShaderStage {
-        let shader_kind = match (shader_type) {
-            ShaderType::Fragment => shaderc::ShaderKind::Fragment,
-            ShaderType::Vertex => shaderc::ShaderKind::Vertex,
-            ShaderType::Compute => shaderc::ShaderKind::Compute,
+            ShaderType::Infer => shaderc::ShaderKind::InferFromSource
         };
 
         unsafe {
             
-            ShaderStage {stage_name: shader_name, shader_data: shader_data, shader_type:shader_type, shader_lang:shader_lang}
+            ShaderStage {stage_name: shader_name, shader_data: shader_data, shader_type:shader_type, shader_lang:shader_lang,shader_inout:shader_inout}
         }
     }
 
@@ -156,70 +257,80 @@ impl Shader {
                                         ShaderType::Compute => stage_ext = ".comp",
                                         ShaderType::Fragment => stage_ext = ".frag",
                                         ShaderType::Vertex => stage_ext = ".vert",
+                                        ShaderType::Infer => stage_ext = ".glsl"
                                     }
                                 },
                                 ShaderLang::Hlsl => stage_ext = ".hlsl",
                                 ShaderLang::GodotShader => stage_ext = ".gdshad",
-                                ShaderLang::Pgsl => stage_ext = ".pfx",
+                                ShaderLang::Pssl => stage_ext = ".pfx",
                             }
                             if !token.is_compiled {
-                                let shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(token.shader_code.clone())), compiled_data: None };
-                                stages.push(ShaderStage::new(file.get_file_name() + stage_ext, token.shader_type, token.shader_lang.clone(), shader_data));
+                                let mut shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(token.shader_code.clone())), compiled_data: None };
+                                shader_data.compile(token.shader_type.clone(), token.shader_lang.clone(), file.get_file_name() + stage_ext);
+                                stages.push(ShaderStage::new(file.get_file_name() + stage_ext, token.shader_type, token.shader_lang.clone(), shader_data, token.shader_inout_datas));
                             }
                             else {
-                                let shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(token.shader_code.clone())), compiled_data: Some(Arc::new(Mutex::new(token.shader_code.clone()))) };
-                                stages.push(ShaderStage::new_from_compiled(file.get_file_name() + stage_ext, token.shader_type, token.shader_lang.clone(), shader_data));
+                                let code = token.shader_code.clone();
+                                let code_u32 = code.align_to::<u32>().1;
+                                let shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(token.shader_code.clone())), compiled_data: Some(Arc::new(Mutex::new(code_u32.to_vec()))) };
+                                stages.push(ShaderStage::new(file.get_file_name() + stage_ext, token.shader_type, token.shader_lang.clone(), shader_data, token.shader_inout_datas));
                             }
                         }
                     },
                     "vert" => {
                         //parse as single stage
                         let mut vec = file.read();
-                        let shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(vec.as_mut_vec().clone())), compiled_data: None };
-                        stages.push(ShaderStage::new(file.get_file_name() + file.get_file_ext().as_str(), ShaderType::Vertex, ShaderLang::Glsl, shader_data));
+                        let mut shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(vec.as_mut_vec().clone())), compiled_data: None };
+                        shader_data.compile(ShaderType::Vertex, ShaderLang::Glsl, file.get_file_name() + file.get_file_ext().as_str());
+                        stages.push(ShaderStage::new(file.get_file_name() + file.get_file_ext().as_str(), ShaderType::Vertex, ShaderLang::Glsl, shader_data, vec![]));
                     },
                     "frag" => {
                         //parse as single stage
                         let mut vec = file.read();
-                        let shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(vec.as_mut_vec().clone())), compiled_data: None };
-                        stages.push(ShaderStage::new(file.get_file_name() + file.get_file_ext().as_str(), ShaderType::Fragment, ShaderLang::Glsl, shader_data));
+                        let mut shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(vec.as_mut_vec().clone())), compiled_data: None };
+                        shader_data.compile(ShaderType::Fragment, ShaderLang::Glsl, file.get_file_name() + file.get_file_ext().as_str());
+                        stages.push(ShaderStage::new(file.get_file_name() + file.get_file_ext().as_str(), ShaderType::Fragment, ShaderLang::Glsl, shader_data, vec![]));
                     },
                     "glsl" => {
                         //parse as single stage
                         let mut vec = file.read();
-                        let shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(vec.as_mut_vec().clone())), compiled_data: None };
-                        stages.push(ShaderStage::new(file.get_file_name() + file.get_file_ext().as_str(), ShaderType::Compute, ShaderLang::Glsl, shader_data));
+                        let mut shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(vec.as_mut_vec().clone())), compiled_data: None };
+                        shader_data.compile(ShaderType::Infer, ShaderLang::Glsl, file.get_file_name() + file.get_file_ext().as_str());
+                        stages.push(ShaderStage::new(file.get_file_name() + file.get_file_ext().as_str(), ShaderType::Infer, ShaderLang::Glsl, shader_data, vec![]));
                     },
                     "comp" => {
                         //parse as single stage
                         let mut vec = file.read();
-                        let shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(vec.as_mut_vec().clone())), compiled_data: None };
-                        stages.push(ShaderStage::new(file.get_file_name() + file.get_file_ext().as_str(), ShaderType::Compute, ShaderLang::Glsl, shader_data));
+                        let mut shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(vec.as_mut_vec().clone())), compiled_data: None };
+                        shader_data.compile(ShaderType::Compute, ShaderLang::Glsl, file.get_file_name() + file.get_file_ext().as_str());
+                        stages.push(ShaderStage::new(file.get_file_name() + file.get_file_ext().as_str(), ShaderType::Compute, ShaderLang::Glsl, shader_data, vec![]));
                     },
                     "hlsl" => {
                         //parse as single stage
                         let mut vec = file.read();
-                        let shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(vec.as_mut_vec().clone())), compiled_data: None };
-                        stages.push(ShaderStage::new(file.get_file_name() + file.get_file_ext().as_str(), ShaderType::Compute, ShaderLang::Hlsl, shader_data));
+                        let mut shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(vec.as_mut_vec().clone())), compiled_data: None };
+                        shader_data.hlsl_compile(file.get_file_name() + file.get_file_ext().as_str());
+                        stages.push(ShaderStage::new(file.get_file_name() + file.get_file_ext().as_str(), ShaderType::Infer, ShaderLang::Hlsl, shader_data, vec![]));
                     },
                     "fx" => {
                         //parse as single stage
                         let mut vec = file.read();
-                        let shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(vec.as_mut_vec().clone())), compiled_data: None };
-                        stages.push(ShaderStage::new(file.get_file_name() + file.get_file_ext().as_str(), ShaderType::Compute, ShaderLang::Hlsl, shader_data));
+                        let mut shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(vec.as_mut_vec().clone())), compiled_data: None };
+                        shader_data.hlsl_compile(file.get_file_name() + file.get_file_ext().as_str());
+                        stages.push(ShaderStage::new(file.get_file_name() + file.get_file_ext().as_str(), ShaderType::Infer, ShaderLang::Hlsl, shader_data, vec![]));
                     },
                     "pfx" => {
                         //parse as single stage
                         let mut vec = file.read();
-                        let shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(vec.as_mut_vec().clone())), compiled_data: None };
-                        stages.push(ShaderStage::new(file.get_file_name() + file.get_file_ext().as_str(), ShaderType::Compute, ShaderLang::Pgsl, shader_data));
+                        let mut shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(vec.as_mut_vec().clone())), compiled_data: None };
+                        stages.push(ShaderStage::new(file.get_file_name() + file.get_file_ext().as_str(), ShaderType::Infer, ShaderLang::Pssl, shader_data, vec![]));
                         panic!("Unimplemented!");
                     },
-                    "gdsahd" => {
+                    "gdshad" => {
                         //parse as single stage
                         let mut vec = file.read();
-                        let shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(vec.as_mut_vec().clone())), compiled_data: None };
-                        stages.push(ShaderStage::new(file.get_file_name() + file.get_file_ext().as_str(), ShaderType::Compute, ShaderLang::GodotShader, shader_data));
+                        let mut shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(vec.as_mut_vec().clone())), compiled_data: None };
+                        stages.push(ShaderStage::new(file.get_file_name() + file.get_file_ext().as_str(), ShaderType::Infer, ShaderLang::GodotShader, shader_data, vec![]));
                         panic!("Unimplemented!!");
                     }
                     _ => {
@@ -316,7 +427,7 @@ impl Shader {
                         let lang_default = Data::String(b"glsl".to_vec());
                         let mut _shader_lang = match data_list.get("shader_lang").unwrap_or(&lang_default).clone().as_str().as_slice() {
                             b"hlsl" => ShaderLang::Hlsl,
-                            b"pgsl" => ShaderLang::Pgsl,
+                            b"pgsl" => ShaderLang::Pssl,
                             b"godot" => ShaderLang::GodotShader,
                             _ => ShaderLang::Glsl,
                         };
@@ -517,7 +628,8 @@ pub enum ShaderDataType {
 
 }
 
-enum ShaderDataTypeClean {
+#[derive(Clone)]
+pub enum ShaderDataTypeClean {
     Integer,
     Boolean,
     UnsignedInteger,

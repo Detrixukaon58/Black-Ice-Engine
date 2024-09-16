@@ -29,20 +29,26 @@ use super::threading::*;
 
 // generic data enum to let us handle acceptable types of data
 pub enum Data {
-    FloatSequence(Vec<f32>),
-    IntegerSequence(Vec<i32>),
-    I16Sequence(Vec<i16>),
-    DoubleSequence(Vec<f64>),
-    ImageSequence(Vec<[f32; 3]>),
+    FloatSequence(String, Vec<f32>),
+    IntegerSequence(String, Vec<i32>),
+    I16Sequence(String, Vec<i16>),
+    DoubleSequence(String, Vec<f64>),
+    ImageSequence(String, Vec<[f32; 3]>),
     Mesh(Arc<Mutex<Mesh>>),
-    Float(f32),
-    Integer(i32),
-    I16(i16),
-    Double(f64)
+    Float(String, f32),
+    Integer(String, i32),
+    I16(String, i16),
+    Double(String, f64),
+    VectorBuffer(String, Vec<Vec3>),
+    Vector(String, Vec3),
+    IVectorBuffer(String, Vec<Vec3>),
+    IVector(String, Vec3),
+    DVectorBuffer(String, Vec<Vec3>),
+    DVector(String, Vec3),
 
 }
 
-pub struct DataSets {
+pub struct DataSet {
     pub id: i32,
     // an editable set of data that exists in heap
     pub input_data: Arc<Mutex<Vec<Data>>>,
@@ -51,7 +57,7 @@ pub struct DataSets {
     pub shader_stages: Vec<ShaderPtr>
 }
 
-impl DataSets {
+impl DataSet {
     fn new(id: i32, input: Arc<Mutex<Vec<Data>>>, output: Arc<Mutex<Vec<Data>>>, stages: Vec<ShaderPtr>) -> Self {
         Self {id:id, input_data: input, output: output, shader_stages: stages }
     }
@@ -60,7 +66,7 @@ impl DataSets {
 pub struct Pipeline {
     pub id: i32,
     pub name: String,
-    pub data_sets: Vec<DataSets>,
+    pub data_sets: Vec<DataSet>,
     pub cameras: Vec<CameraDriver>,
     pub layer: u32,
     pub driver: Arc<Mutex<Option<DriverValues>>>,
@@ -85,7 +91,7 @@ impl Pipeline {
 
     pub fn register_data(&mut self, data: Arc<Mutex<Vec<Data>>>, stages: Vec<ShaderPtr>, id: i32){
         let output = Arc::new(Mutex::new(Vec::new()));
-        self.data_sets.push(DataSets::new(id, data, output, stages));
+        self.data_sets.push(DataSet::new(id, data, output, stages));
         
     }
 }
@@ -232,8 +238,15 @@ impl RenderPipelineSystem{
         let mut rend = p_rend.write();
         let mut i = 0;
         let mut stage = rend.shader_stages_data.get_mut(shader_ptr).expect("Shader pointer out of range!!");
+        // Looks like this may cause a memory leak - pls check!!
         stage.shader_data = shader_data;
     }
+
+    pub unsafe fn get_shader_stage(stage: usize) -> ShaderStage {
+        let mut p_rend = Env::get_render_sys();
+        let mut rend = p_rend.read();
+        rend.shader_stages_data.get(stage).expect("No such shader registered!! Something must have gone wrong with shader registration!!").clone()
+    } 
 
     pub fn update_camera(&mut self, id: i32, projection: &MatrixProjection, transform: &Matrix34, up: Vec3, forward: Vec3) {
         let p_cam = self.cameras.iter().find(|v| {let vv = v.lock(); vv.cam_id == id}).clone().expect("No such registered camera!!");

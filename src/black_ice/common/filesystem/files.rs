@@ -1,12 +1,12 @@
 use std::any::Any;
-use std::fmt::{Display, Error};
+use std::fmt::Display;
 use std::fs::{*, self};
 use std::io::{prelude::*, BufReader};
+use std::sync::Arc;
 use shaderc::CompileOptions;
 
 use crate::black_ice::common::{APP_DIR, materials};
 use crate::black_ice::common::engine::gamesys::*;
-use crate::black_ice::common::engine::assetpack::*;
 
 #[cfg(target_os = "windows")] const ASSET_PATH: &str =  "F:\\Rust\\Program 1\\assets";
 #[cfg(target_os = "linux")] const ASSET_PATH: &str = "/home/detrix/rust/black-ice/assets";
@@ -14,25 +14,33 @@ use crate::black_ice::common::engine::assetpack::*;
 #[cfg(debug_assertions)] const IS_DEBUG: bool = true;
 
 #[derive(Clone)]
-pub struct AssetPath {
+pub struct Asset {
     path: String,
+    // include otherr asset system stuff here!!
+    asset_file_data: Option<Arc<[u32]>>
 }
 
-impl Base for AssetPath{}
+impl Base for Asset{}
 
-impl AssetPath {
+impl Asset {
     pub fn default() -> Self {
-        Self { path: String::new() }
+        Self { path: String::new(), asset_file_data: None }
     }
 
-    pub fn new(path: String) -> Self {
-        Self { path: path }
+    pub fn new() -> Self {
+        Self { path: String::new(), asset_file_data: None }
     }
 
-    pub fn open_as_file(&mut self) -> FileSys {
-        let mut file = FileSys::new();
-        file.open(self.path.as_str());
-        file
+    pub fn open(&mut self, path: String) {
+        // get the game's asset manager!!
+        let mut ptr_asset_mgr = Env::get_asset_mgr();
+    }
+
+    pub fn from_path(path: String) -> Self {
+
+        let mut val = Self::default();
+        val.open(path);
+        return val;
     }
 
     pub fn get_file_name(&mut self) -> String {
@@ -55,9 +63,6 @@ pub struct FileSys{
 
     f: Option<File>,
     b: Option<BufReader<File>>,
-    is_dir: bool,
-    is_file: bool,
-    p: Option<ReadDir>,
     total_len: usize,
     i: usize,
     pub path: String
@@ -104,13 +109,12 @@ trait Handlers {
 pub trait Reader<U> {
     fn read(&mut self) -> U;
     fn read_file(&mut self) -> U;
-    fn read_dir(&mut self) -> Result<U, Error>;
 }
 
 impl FileSys{
 
     pub fn new() -> FileSys{
-        return FileSys { f: None, b: None, p: None, i: 0, total_len: 0, is_file: false, is_dir: false, path: String::from("") };
+        return FileSys { f: None, b: None, i: 0, total_len: 0, path: String::from("") };
     }
 
     pub fn open(&mut self, _path: &str){
@@ -127,14 +131,6 @@ impl FileSys{
                 self.f = Option::Some(File::open(full_path.as_str()).expect(format!("File {} not found!", _path[7..].to_owned()).as_str()));// format "ASSET:\\path\\to\\file" => "DRIVE:\\path\\to\\assets\\path\\to\\file"
                 self.path = String::from(_path);
                 self.b = Option::Some(BufReader::new((*self.f.as_ref().unwrap()).try_clone().expect("Couldn't clone file for BufReader!!")));
-                self.is_file = true;
-                
-            }
-            else if dir.is_dir() {
-                self.p = Option::Some(fs::read_dir(full_path).unwrap());
-                self.path = String::from(_path);
-                self.is_dir = true;
-                self.total_len = self.p.as_mut().unwrap().count();
             }
         }
         else 
@@ -391,28 +387,6 @@ impl Reader<String> for FileSys {
         return result;
     }
 
-    /// This gets the path for each file in the directory
-    fn read_dir(&mut self) -> Result<String, Error> {
-        if self.i == self.total_len {
-            panic!("End of Directory!");
-        }
-        if !self.is_dir {
-            panic!("Not a Directory!!");
-        }
-        let mut entry: String = String::from("null");
-        let j = 0;
-        for path in self.p.as_mut().unwrap() {
-            if j == self.i {
-                entry = path.unwrap().path().canonicalize().unwrap().display().to_string();
-            }
-        }
-        if entry.eq("null") {
-            panic!("Error trying ot open file. Must be a programatical error. Please contact the developer!")
-        }
-        self.i +=1;
-        return Result::Ok(entry);
-    }
-
 }
 
 impl Handlers for FileSys{
@@ -474,3 +448,5 @@ impl Display for MFType {
         return write!(f, "{}", format!("{}", name));
     }
 }
+
+

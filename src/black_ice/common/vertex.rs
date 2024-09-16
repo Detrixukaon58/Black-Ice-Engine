@@ -222,9 +222,9 @@ impl ops::Mul<f32> for Vec3 {
 
 impl ops::MulAssign for Vec3 {
     fn mul_assign(&mut self, rhs: Self) {
-        self.x /= rhs.x;
-        self.y /= rhs.y;
-        self.z /= rhs.z;
+        self.x *= rhs.x;
+        self.y *= rhs.y;
+        self.z *= rhs.z;
     }
 }
 
