@@ -16,7 +16,7 @@ enum PathType {
     FILE,
 
 }
-
+//region Path Rep
 struct PathRep {
     pub name: String,
     pub path_type: PathType,
@@ -79,7 +79,7 @@ impl PathRep {
         self.path_type == PathType::DIRECTORY
     }
 }
-
+//endregion
 pub struct AssetPack{
     pub asset_names: Vec<String>,
     pub asset_count: usize,
@@ -268,7 +268,7 @@ impl AssetPack{
                     current_dir+= 1;
                 }
             }
-            // now check the next bit if it closes the 
+            // now check the next bit if it closes the file
             
         }
         
@@ -323,5 +323,10 @@ impl AssetPack{
     // We want to also be able to preload our shaders and any other data
     // This function should let us do that for the shaders
     // The next one should do it for any asset
+
+}
+
+
+pub struct AssetManager {
 
 }
