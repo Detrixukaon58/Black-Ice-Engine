@@ -3,6 +3,7 @@ use std::fs::{*, self};
 use std::io::{prelude::*, BufReader};
 use std::sync::Arc;
 use shaderc::CompileOptions;
+use std::any::TypeId;
 
 use crate::black_ice::common::{APP_DIR, materials};
 use crate::black_ice::common::engine::gamesys::*;
@@ -12,52 +13,6 @@ use crate::black_ice::common::engine::gamesys::*;
 #[cfg(not(debug_assertions))] const IS_DEBUG: bool = false;
 #[cfg(debug_assertions)] const IS_DEBUG: bool = true;
 
-#[derive(Clone)]
-pub struct Asset {
-    path: String,
-    // include otherr asset system stuff here!!
-    asset_file_data: Option<Arc<[u32]>>
-}
-
-impl Base for Asset{}
-
-impl Asset {
-    pub fn default() -> Self {
-        Self { path: String::new(), asset_file_data: None }
-    }
-
-    pub fn new() -> Self {
-        Self { path: String::new(), asset_file_data: None }
-    }
-
-    pub fn open(&mut self, path: String) {
-        // get the game's asset manager!!
-        let mut ptr_asset_mgr = Env::get_asset_mgr();
-    }
-
-    pub fn from_path(path: String) -> Self {
-
-        let mut val = Self::default();
-        val.open(path);
-        return val;
-    }
-
-    pub fn get_file_name(&mut self) -> String {
-        let mut temp = self.path.clone();
-        temp = temp.replace("ASSET:", "");
-        while temp.find("\\").is_some() {
-            temp.remove(0);
-        }
-
-        temp
-    }
-
-    pub fn get_file_ext(&mut self) -> String{
-        let temp = self.get_file_name();
-        let a: Vec<&str> = temp.split(".").collect();
-        String::from(*a.last().unwrap())
-    }
-}
 pub struct FileSys{
 
     f: Option<File>,
@@ -78,7 +33,7 @@ impl Reflection for FileSys {
             name: Box::new("path"), 
             desc: Box::new("Path of file."), 
             reference: Box::new(&self.path), 
-            ref_type: self.path.type_id()
+            ref_type: TypeId::of::<String>()
         });
         return Ptr {b: register};
     }
@@ -413,7 +368,7 @@ impl Handlers for FileSys{
     }
 
 }
-
+use std::fmt::Display;
 #[allow(unused_assignments)]
 impl Display for MFType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

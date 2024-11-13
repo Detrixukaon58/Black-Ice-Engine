@@ -266,6 +266,7 @@ pub struct Env {
     ENTITY_SYS: components::component_system::ComponentRef<EntitySystem>,
     INPUT_SYS: Arc<Mutex<InputSystem>>,
     EVENT_SYS: Arc<Mutex<EventSystem>>,
+    ASSET_MGR: Arc<Mutex<common::engine::asset_mgr::AssetManager>>,
     pub STATUS: Arc<Mutex<StatusCode>>,
     pub sdl_values: SDLValues,
     pub window_x: u32,
@@ -328,6 +329,7 @@ impl Env {
         let input_sys = Arc::new(Mutex::new(InputSystem::new(x / 2, y / 2)));
         let event_system = Arc::new(Mutex::new(EventSystem::new()));
         let render_sys = Arc::new(RwLock::new(RenderPipelineSystem::new(sdl.clone(), video.clone(), window.clone())));
+        let asset_mg = Arc::new(Mutex::new(common::engine::asset_mgr::AssetManager::new()));
         let sdl_values = SDLValues {
             sdl: sdl,
             video: video,
@@ -342,6 +344,7 @@ impl Env {
             ENTITY_SYS: ent_sys,
             INPUT_SYS: input_sys,
             EVENT_SYS: event_system,
+            ASSET_MGR: asset_mg,
             STATUS: Arc::new(Mutex::new(StatusCode::INITIALIZE)),
             window_x: x,
             window_y: y,
@@ -484,10 +487,14 @@ impl Env {
         Env::get_env().INPUT_SYS.clone()
     }
 
+    pub unsafe fn get_asset_mgr() -> Arc<Mutex<common::engine::asset_mgr::AssetManager>> {
+        Env::get_env().ASSET_MGR.clone()
+    }
+
     pub fn get_env() -> &'static mut Env {
         unsafe{
         
-        ENV.as_mut().expect("Gamehas not been initialized!!")
+        ENV.as_mut().expect("Game has not been initialized!!")
         }
     }
 

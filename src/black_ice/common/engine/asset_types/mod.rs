@@ -1,12 +1,11 @@
 
-use parking_lot::*;
-
 use std::sync::Arc;
+use std::{fmt, error::Error};
 
 pub mod shader_asset;
 
 pub enum InputData {
-    OBJECT(String, InputData),
+    OBJECT(String, Arc<InputData>),
     ARRAY(Vec<InputData>),
     BYTEARRAY(i32),// This is a pointer to the loaded byte data so as to ensure that shared
     // references do not have multiple copies of the same data throughout memory
@@ -20,17 +19,33 @@ pub enum OutputData {
     NONE
 }
 
+#[derive(Debug)]
+pub struct AssetResourceUpdateError {}
+
+impl fmt::Display for AssetResourceUpdateError {
+
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Failed to update asset data!!")
+    }
+
+}
+
+impl Error for AssetResourceUpdateError {}
+
+
 pub trait AssetResource {
 
-    pub fn load(&mut self); // loads the asset's data. This needs to be defined in order for the
+    fn new() -> Self;
+
+    fn init(&mut self, data: InputData); // loads the asset's data. This needs to be defined in order for the
     // asset manager to be able to process your custom asset resource
 
-    pub fn update(&mut self) -> Result<OutputData, std::error::Error>{
+    fn update(&mut self) -> Result<OutputData, AssetResourceUpdateError>{
         return Ok(OutputData::NONE);
     }// possible update function
     // for any asset that mey need to stream data instead of loading just the once
 
-    pub fn unload(&mut self);// This must be done in order for the asset data that has been loaded
+    fn unload(&mut self);// This must be done in order for the asset data that has been loaded
     // to be reset on the case of the asset no longer being used or for the application to be
     // closed. You must remember that data that has been previously loaded will be stored in a
     // shared memory in order to be memory efficient. So when loading and unloading, you must make
@@ -39,3 +54,6 @@ pub trait AssetResource {
 
     
 }
+
+
+pub mod texture;

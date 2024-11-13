@@ -3,11 +3,16 @@
 
 use std::collections::HashMap;
 use std::error::Error;
+use std::str::FromStr;
 use std::{fmt, io};
 use std::{fs::File, path::PathBuf};
+use std::sync::Arc;
 
 use std::io::{BufRead, BufReader, Read, Seek};
 use colored::*;
+use parking_lot::*;
+use crate::black_ice::common::Env;
+use crate::black_ice::common::engine::asset_types::*;
 
 #[derive(PartialEq)]
 enum PathType {
@@ -128,6 +133,7 @@ impl AssetPack{
     *     path_name (the name of the directory or file, stored as ascii, null terminated!!)
     *     path_type (a bit that tells us if it is a file or directory)
     *     (file_size only shown if previous is 0)
+    *     metadata here, enclosed by some deliminator
     *     < (start of data)
     *         data (this could either be more files and directories iff the parent is a directory)
     *              (or it could be some data for a file iff the parent is a file)
@@ -139,6 +145,7 @@ impl AssetPack{
     *         our_file
     *         0 (File)
     *         12 (in bytes, only applicable to files. Written as a 64 bit integer)
+    *         [text]
     *         <
     *             hello world
     *         >
@@ -221,7 +228,7 @@ impl AssetPack{
             return Err(AssetPackLoadError { source: AssetPackLoadErrorStackTrace::DelimError});
         }
         delim.copy_from_slice(b" ");// clear the delim so that we do not have
-        let mut paths_unfinished_vec: Vec<(String, u8)> = vec![()];// This will store our paths that we have so far read but haven't totally commited!!
+        let mut paths_unfinished_vec: Vec<(String, u8)> = vec![];// This will store our paths that we have so far read but haven't totally commited!!
         // To commit a PathRep, we must encounter a closing deliminator
         let mut path_reps_vec: Vec<HashMap<String, PathRep>> = vec![];// This stores the set of paths within a current directory!!
         let mut current_dir: usize = 0;// We start at directory 0, the root directory
@@ -248,7 +255,27 @@ impl AssetPack{
                     let mut size_u8: [u8; 8];
                     buff_reader.read_exact(&mut size_u8).expect("Failed to read file size!!");
                     let size: usize = usize::from_le_bytes(size_u8);
-
+                    // now we need to get the metadata of the file, This must be done using string, soo we will keep reading a new character
+                    // into some string
+                    let mut metadata: String = String::new();
+                    // read first character to check if there is metadata
+                    let mut mt: [u8; 1];
+                    buff_reader.read_exact(&mut mt).expect("Cannot read metadata!!");
+                    if mt[0] == b'[' {
+                        // we have metadata
+                        // now we keep reading till we reach the end of the ascii list!!
+                        loop {
+                            buff_reader.read_exact(&mut mt).expect("Cannot read metadata!!");
+                            if mt[0] == b']' {
+                                break;
+                            }
+                            metadata.push(mt[0].into());
+                        }
+                    }
+                    else{
+                        // we don't have metadata
+                        buff_reader.seek(io::SeekFrom::Current(-1)).expect("Failed to reset head!!");
+                    }
                     let start = buff_reader.seek(io::SeekFrom::Current(0)).expect("Failed to get current position of head");
 
                     let mut path_rep = PathRep::new(path_name, PathType::FILE);
@@ -269,7 +296,17 @@ impl AssetPack{
                 }
             }
             // now check the next bit if it closes the file
-            
+            let mut byte: [u8; 1];
+            buff_reader.read_exact(&mut byte);
+            match &byte{
+                b">" =>{
+                    // we can continue perfectly fine!!
+                }
+                _ =>{
+                    return Err(AssetPackLoadError { source: AssetPackLoadErrorStackTrace::DelimError});
+                }
+            }
+
         }
         
         return Ok(());
@@ -280,8 +317,10 @@ impl AssetPack{
         assert_eq!("pkg", path.extension().unwrap());
         // this is a file and we can load it correctly!!
         let asset_pack_file = File::open(path.clone()).expect("Failed to open file!!");
-        let temp = path.file_stem().unwrap();
-        let filename = temp.to_str().unwrap();
+        let temp = path.as_path().file_name().unwrap();
+        let temp2 = PathBuf::from(temp.to_str().unwrap());
+        let temp3 = temp2.file_stem().unwrap();
+        let filename = temp2.to_str().unwrap();
         let mut buff_reader = BufReader::new(asset_pack_file);
         let mut asset_names = Vec::<String>::new();
         let mut paths = HashMap::<String, PathRep>::new();
@@ -326,7 +365,141 @@ impl AssetPack{
 
 }
 
+pub enum AssetManagerData {
+
+}
+
+
+pub struct AssetData {
+
+    pub data: Vec<u8>,
+    pub metadata: Vec<String>,
+}
 
 pub struct AssetManager {
 
+    asset_packs: HashMap<String, AssetPack>,
+    debug_asset_pack_references: HashMap<String, PathBuf>,
+    is_start: bool,
+    thread_reciever: Arc<Mutex<Vec<AssetManagerData>>>,
+    asset_data_reference: HashMap<String, Arc<AssetData>>, // we want this to be read only, as we do not want to edit the original assetpack!!,
+    // If you want to edit files, then you must access them through the file system
+    // This will mean that you will not be able to load them through the asset manager
+    // and have to manage them yourself!!
+
+}
+
+
+impl AssetManager {
+
+    pub fn new() -> Self{
+        Self{
+            asset_packs: HashMap::new(),
+            debug_asset_pack_references: HashMap::new(),
+            is_start: false,
+            thread_reciever: Arc::new(Mutex::new(vec![])),
+            asset_data_reference: HashMap::new()
+        }
+    }
+
+    pub fn load_asset_pack(p_this: Arc<Mutex<Self>>, full_path: String){
+        let asset_pack_path = PathBuf::from(full_path);
+        let asset_pack = AssetPack::load(asset_pack_path);
+        let mut this = p_this.lock();
+        this.asset_packs.insert(asset_pack.asset_location, asset_pack);
+        drop(this);
+    }
+
+    pub fn load_folder_as_asset_pack(p_this: Arc<Mutex<Self>>, full_path: String){
+        let asset_pack_path = PathBuf::from(full_path);
+        let mut this = p_this.lock();
+        let temp = asset_pack_path.clone().file_name().unwrap();
+        let temp2 = PathBuf::from(temp.to_str().unwrap());
+        let temp3 = temp2.file_stem().unwrap();
+        let temp4 = temp3.to_str().unwrap();
+        this.debug_asset_pack_references.insert(String::from_str(temp4).unwrap(), asset_pack_path);
+    }
+
+    pub fn load_asset<T>(path: String) -> T where T : AssetResource {
+        // first we check if the asset has already been loaded
+        unsafe {
+            let p_asset_mg = Env::get_asset_mgr();
+            let mut asset_mg = p_asset_mg.lock();
+            let debug_asset_path = asset_mg.debug_asset_pack_references.get(&path);
+
+            let mut asset = T::new();
+
+            // find the asset and read the data in!!
+            // if we are in debug, then we will try to use the debug reference
+            let mut asset_data: Some<AssetData> = None;
+            if debug_asset_path.is_some() {
+                let mut debug_asset = debug_asset_path.unwrap();
+                let mut debug_asset_file = File::open(debug_asset).expect("Failed to open asset file!!");
+                let mut debug_assset_reader = BufReader::new(debug_asset_file);
+                let mut debug_asset_data = Vec::<u8>::new();
+                debug_assset_reader.read_to_end(&mut debug_asset_data);
+
+                let mut debug_asset_metadata = Vec::<String>::new();
+
+                // read the file's metadata
+                let mut temp: AssetData = AssetData { data: debug_asset_data, metadata: debug_asset_metadata };
+            }
+            else{
+                // first lets get the asset pack that we need
+                // This will need to be the first path in the 
+            }
+
+            asset.init();
+
+
+            asset
+
+        }
+
+    }
+
+    pub fn processing(p_this: Arc<Mutex<Self>>){
+
+        loop {
+            let this = p_this.lock();
+            if this.is_start {
+                drop(this);
+                break;
+            }
+            drop(this);
+        }
+
+        unsafe{
+            while !Env::isExit(){
+                // we will organise all asset packs here
+                let this = p_this.lock();
+                let mut p_recv = this.thread_reciever.clone();
+                drop(this);
+                let mut recv = p_recv.try_lock();
+                if let Some(ref mut mutex) = recv {
+                    for th in mutex.as_slice() {
+                        let data = th.clone();
+                        match data {
+                            _ => ()
+                        }
+                    }
+                    mutex.clear();
+                }
+                drop(recv);
+
+            }
+        }
+
+    }
+
+
+    pub fn start(p_this: Arc<Mutex<Self>>){
+        let mut this = p_this.lock();
+        this.is_start = true;
+        drop(this);
+    }
+
+    pub fn init(this: Arc<Mutex<Self>>){
+        Self::processing(this);
+    }
 }
