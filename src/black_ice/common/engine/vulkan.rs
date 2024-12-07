@@ -144,7 +144,7 @@ impl DriverValues {
         extension_names.push(ash::extensions::ext::DebugUtils::name().to_str().unwrap());
         // #[cfg(target_os = "linux")] extension_names.push(ash::extensions::khr::XlibSurface::name().to_str().unwrap());
         for ext in extension_names.to_vec() {
-            println!("{}", ext.blue());
+            //println!("{}", ext.blue());
         }
         let layer_names = [std::ffi::CStr::from_bytes_with_nul_unchecked(
             b"VK_LAYER_KHRONOS_validation\0",
@@ -192,7 +192,7 @@ impl DriverValues {
         DriverValues::choose_best_device(driver);
         DriverValues::create_swap_chain(driver);
         DriverValues::create_image_views(driver);
-        println!("Created Swapcahin!!");
+        //println!("Created Swapcahin!!");
         
         // let mut vt_input = vk::VertexInputBindingDescription::default();
         // vt_input.input_rate = vk::VertexInputRate::VERTEX;
@@ -450,7 +450,7 @@ impl DriverValues {
 
             let process = std::process::Command::new("sh").arg("-c").arg("echo $XDG_SESSION_TYPE").output().unwrap();
             let windowing = std::str::from_utf8_unchecked(process.stdout.as_slice());
-            println!("{}", windowing);
+            //println!("{}", windowing);
             match windowing {
 
                 "wayland\n" =>{
@@ -868,8 +868,8 @@ impl DriverValues {
         }
 
         score += physical_device_properties.limits.max_image_dimension2_d;
-        println!("{name}: {score} : {hasGeom}", name=std::ffi::CStr::from_ptr(physical_device_properties.device_name.as_ptr()).to_str().unwrap(), 
-        hasGeom = physical_device_features.geometry_shader);
+        //println!("{name}: {score} : {hasGeom}", name=std::ffi::CStr::from_ptr(physical_device_properties.device_name.as_ptr()).to_str().unwrap(), 
+        //hasGeom = physical_device_features.geometry_shader);
         if physical_device_features.geometry_shader == 0 {
             return 0;
         }
@@ -1071,12 +1071,12 @@ pub unsafe extern "system" fn vulkan_debug_callback(
         "{message_severity:?}: {message_type:?} [{message_id_name} ({message_id_number})] : {message}",
     );
 
-    println!{"{}", output.color(match message_severity {
-        vk::DebugUtilsMessageSeverityFlagsEXT::ERROR => Color::BrightRed,
-        vk::DebugUtilsMessageSeverityFlagsEXT::WARNING => Color::Yellow,
-        vk::DebugUtilsMessageSeverityFlagsEXT::INFO => Color::Blue,
-        _ => Color::White,
-    })}
+    // println!{"{}", output.color(match message_severity {
+    //     vk::DebugUtilsMessageSeverityFlagsEXT::ERROR => Color::BrightRed,
+    //     vk::DebugUtilsMessageSeverityFlagsEXT::WARNING => Color::Yellow,
+    //     vk::DebugUtilsMessageSeverityFlagsEXT::INFO => Color::Blue,
+    //     _ => Color::White,
+    // })}
 
     vk::FALSE
 }

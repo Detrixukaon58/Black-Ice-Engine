@@ -80,7 +80,7 @@ impl Entity {
     pub fn add_component<T>(this: &mut EntityPtr, definition: ConstructorDefinition) -> ComponentRef<T> where T: BaseComponent + Constructor<T> {
         unsafe{
 
-            println!("{}", "Adding component to Entity!!".bright_red());
+            //println!("{}", "Adding component to Entity!!".bright_red());
             let p_entity = this.clone();
             let component = T::construct(p_entity, &definition).unwrap();
             let mut c = component.lock();
@@ -100,7 +100,7 @@ impl Entity {
                 drop(comp_sys);
                 break;
             }
-            println!("{}", "Added component to Entity!!".bright_red());
+            //println!("{}", "Added component to Entity!!".bright_red());
             component
         }
     }
@@ -188,7 +188,7 @@ impl Entity {
             
             
         }
-        println!("{}", "Killed Entity".red());
+        //println!("{}", "Killed Entity".red());
         
         0
     }
@@ -485,13 +485,13 @@ impl EntitySystem {
 
     pub fn init<'a>(this: Arc<Mutex<Self>>){
         unsafe{
-            println!("Spawned Entity System!!");
+            //println!("Spawned Entity System!!");
             Self::processing(this);
         }
     }
 
     pub unsafe fn processing(p_this: Arc<Mutex<Self>>) -> i32 {
-        println!("Enter loop");
+        //println!("Enter loop");
         loop {
             let mut this = p_this.lock();
             let ready = this.ready.clone();
@@ -578,7 +578,7 @@ impl EntitySystem {
             //this.send_event(Event::update_event());
             // std::thread::sleep(std::time::Duration::from_millis(5));
         }
-        println!("Closing Entity System thread!");
+        //println!("Closing Entity System thread!");
         let mut this = p_this.lock();
         let mut entities = this.p_entities.lock();
         for p_entity in entities.to_vec() {
@@ -616,7 +616,7 @@ impl EntitySystem {
 
     pub fn start(p_this: Arc<Mutex<Self>>) {
         let mut this = p_this.lock();
-        println!("{}", "Starting Entity Thread!!".yellow());
+        //println!("{}", "Starting Entity Thread!!".yellow());
         this.ready = true;
     }
 

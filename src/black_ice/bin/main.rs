@@ -385,7 +385,7 @@ pub unsafe fn init_game_env() {
     #[cfg(target_os = "windows")]
     let mut lib_path = path_str.to_owned() + "\\black_ice_lib.dll";
     #[cfg(target_os = "linux")]
-    let mut lib_path = path_str.to_owned() + "/black_ice_lib.so";
+    let mut lib_path = path_str.to_owned() + "/libblack_ice_lib.so";
     #[cfg(target_os = "mac")]
     let mut lib_path = path_str.to_owned() + "/black_ice_lib.dynlib";
     let lib = libloading::Library::new(lib_path).expect("Failed to load engine library!!");

@@ -1,6 +1,7 @@
 #![feature(mutex_unlock)]
 #![allow(unused)]
 use std::any::Any;
+use std::io::Error;
 use raw_window_handle::HasRawWindowHandle;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -8,11 +9,10 @@ use std::ops::DerefMut;
 use std::sync::{Arc, atomic::*};
 use parking_lot::*;
 use std::sync::atomic::AtomicI32;
-use std::future::*;
+use std::{future::*, u32};
 use sdl2::*;
 use colored::*;
 
-extern crate raw_window_handle;
 
 use crate::black_ice::common::materials::*;
 use crate::black_ice::common::matrices::*;
@@ -123,6 +123,32 @@ impl Camera {
 
 }
 
+pub struct Image {
+    data: Vec<[u32;4]>,
+    width: u32,
+    height: u32,
+    pub is_atlas: bool,
+    pub is_full: bool,
+    max_width: u32,
+    max_height: u32,
+    uvs: HashMap<String, (u32, u32)>,
+}
+
+impl Image {
+    pub fn new(im_data: Vec<[u32;4]>, width: u32, height: u32, is_atlas: bool) -> Self {
+        Self { 
+            data: im_data, 
+            width: width, 
+            height: height, 
+            is_atlas: is_atlas, 
+            is_full: false, 
+            max_width: u32::MAX, 
+            max_height: u32::MAX,
+            uvs: HashMap::new(),
+        }
+    }
+}
+
 // TODO: Add mesh reference vector so that we don't reference meshes only in the pipeline
 // (Saves on memory and don't want to store multiple instances of meshes)
 pub struct RenderPipelineSystem {
@@ -140,6 +166,7 @@ pub struct RenderPipelineSystem {
     pub window: Arc<Mutex<sdl2::video::Window>>,
     pub sdl: Arc<Mutex<sdl2::Sdl>>,
     shader_stages_data: Vec<ShaderStage>,
+    registered_images: HashMap<String, Arc<Mutex<Image>>>,
 
 }
 
@@ -285,6 +312,22 @@ impl RenderPipelineSystem{
         }
     }
 
+    pub fn register_image(&mut self, image_data: &Vec<[u32; 4]> , width: u32, height: u32, depth: u32, image_name:String) -> Arc<Mutex<Image>> {
+        let result = self.registered_images.get(&image_name);
+        if let Some(value) = result {
+            return value.clone();
+        }
+
+        // we didn't find anything, so we must register it!!
+        let image = Arc::new(Mutex::new(Image::new(image_data.clone(), width, height, false)));
+        self.registered_images.insert(image_name, image.clone());
+        image
+    }
+
+    pub fn find_image(&self, image_name: String) -> Result<Arc<Mutex<Image>>, std::io::ErrorKind> {
+        self.registered_images.get(&image_name).cloned().ok_or(std::io::ErrorKind::NotFound)
+    }
+
     pub fn new(sdl: Arc<Mutex<Sdl>>, video: Arc<Mutex<sdl2::VideoSubsystem>>, window: Arc<Mutex<sdl2::video::Window>>) -> RenderPipelineSystem {
 
         let pip_sys = RenderPipelineSystem {
@@ -302,6 +345,7 @@ impl RenderPipelineSystem{
             video: video,
             sdl: sdl,
             shader_stages_data: vec![],
+            registered_images: HashMap::<String, Arc<Mutex<Image>>>::new()
         };
         return pip_sys;
     }
@@ -317,7 +361,7 @@ impl RenderPipelineSystem{
                 }
                 std::thread::sleep(std::time::Duration::from_millis(5));
             }
-            println!("{}", p_this.is_locked());
+            //println!("{}", p_this.is_locked());
             let this = p_this.write();
             // Initialise pipeline stuff
             #[cfg(feature = "vulkan")]DriverValues::init_vulkan(this.driver_vals.lock().as_mut().unwrap(), &this.window, &this.video);
@@ -334,7 +378,7 @@ impl RenderPipelineSystem{
             // first we setup threads for each layer
             //let mut threads: Box<Dict<usize, Arc<Mutex<Threader>>>> = Box::new(Dict::<usize, Arc<Mutex<Threader>>>::new());
             drop(this);
-            println!("{}", p_this.is_locked());
+            //println!("{}", p_this.is_locked());
 
             while !Env::isExit() {
                 let this = match p_this.try_read() {
@@ -389,7 +433,7 @@ impl RenderPipelineSystem{
                 // std::thread::sleep(std::time::Duration::from_millis(5));
                 
             }
-            println!("Closing thread!!");
+            //println!("Closing thread!!");
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
         0
@@ -397,10 +441,10 @@ impl RenderPipelineSystem{
 
     pub fn start(p_this: Arc<RwLock<Self>>) {
         let mut this = p_this.write();
-        println!("{}", "Starting Render Thread!!".yellow());
+        //println!("{}", "Starting Render Thread!!".yellow());
         this.ready = true;
         drop(this);
-        println!("{}", p_this.is_locked());
+        //println!("{}", p_this.is_locked());
     }
 
     pub fn is_alive(this: &mut Self) -> bool {
@@ -427,7 +471,7 @@ impl RenderPipelineSystem{
 
     pub fn init<'a>(this: Arc<RwLock<Self>>){
         // Start thread
-        println!("Spawned Render Pipeline System");
+        //println!("Spawned Render Pipeline System");
         Self::processing(this.clone());
     }
 

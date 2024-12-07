@@ -59,7 +59,7 @@ impl EventSystem {
                 match *event {
                     event::Event::Quit {..} =>  {
                         unsafe{Env::set_status(StatusCode::CLOSE);}
-                        println!("Close sent");
+                        //println!("Close sent");
                         
                     }
                     event::Event::Window { timestamp, window_id, win_event } => {
@@ -96,7 +96,7 @@ impl EventSystem {
 
     pub fn start(p_this: Arc<Mutex<Self>>) {
         let mut this = p_this.lock();
-        println!("{}", "Starting Event Thread!!".yellow());
+        //println!("{}", "Starting Event Thread!!".yellow());
         this.ready = true;
     }
 

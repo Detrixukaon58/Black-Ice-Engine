@@ -1,15 +1,4 @@
 {
-    "rust-analyzer.linkedProjects": [
-        ".\\Cargo.toml",
-        ".\\Cargo.toml",
-        "Cargo.toml",
-        ".\\Cargo.toml",
-        ".\\Cargo.toml",
-        ".\\Cargo.toml",
-        ".\\Cargo.toml",
-        ".\\Cargo.toml",
-        ".\\Cargo.toml"
-    ],
     "actionButtons": {
 
         "defaultColor": "#ff0034", // Can also use string color names.
@@ -36,9 +25,8 @@
             }
         ]
     },
-    "rust-analyzer.debug.engineSettings": {},
     "rust-analyzer.cargo.features": ["opengl"],
     "rust-analyzer.cargo.extraArgs": [],
-    "lldb.verboseLogging": true,
-    "lldb.launch.terminal": "integrated"
+    "lldb.launch.terminal": "integrated",
+    "debug.javascript.breakOnConditionalError": true
 }

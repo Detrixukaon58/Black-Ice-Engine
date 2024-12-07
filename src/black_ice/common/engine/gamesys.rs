@@ -13,6 +13,7 @@ use crate::black_ice::common::vertex::{V3New, V3Meth};
 use crate::black_ice::common::{*, mesh::Mesh, components::{component_system::*, entity::{entity_system::*, *}}};
 use std::sync::Arc;
 use colored::Colorize;
+use engine::asset_mgr::{self, AssetManager};
 use parking_lot::*;
 use futures::join;
 use sdl2::*;
@@ -357,7 +358,9 @@ impl Env {
         // Set up thread pool
 
         let runner = async{
-
+            // load in our asset folders
+            
+            AssetManager::load_asset_folder("/home/detrix/rust/black-ice/assets".to_string());
             
             let p_render_sys = self.RENDER_SYS.clone();
             let p_entity_sys = self.ENTITY_SYS.clone();
@@ -389,12 +392,11 @@ impl Env {
             drop(ent_sys_2);
             let def: common::components::component_system::Value = common::components::component_system::ValueBuilder::new().from_str(r#"
             {
-                "image_file": {
-                    "path" : "ASSET:\\images\\nemissa_hitomi.png"
-                }
+                "texture": "ASSET:assets/images/nemissa_hitomi.png"
+                
             }
             "#).build();
-            println!("{}", def["image_file"]);
+            //println!("{}", def["image_file"]);
             p_entity.add_component::<components::entity::image_component::Image>(Arc::new(def));
             let cam_def = components::entity::camera_component::CameraComponent::default_constuctor_definition();
             
@@ -448,7 +450,7 @@ impl Env {
             render_join_handle.join();
             entity_join_handle.join();
             input_join_handle.join();
-            println!("Exiting Game!!");
+            //println!("Exiting Game!!");
         };
 
         futures::executor::block_on(runner);

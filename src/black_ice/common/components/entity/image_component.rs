@@ -1,12 +1,14 @@
 #![allow(unused)]
 #![allow(non_snake_case)]
 
+use engine::{asset_mgr::AssetManager, asset_types::texture::Texture};
+
 use crate::black_ice::common::{components::{component_system::*, entity::entity_system::*}, *, filesystem::files::*, vertex::*};
 
 
 
 pub struct Image {
-    image_file: filesystem::files::Asset,
+    texture: Texture,
     p_Entity: EntityPtr
 }
 
@@ -17,10 +19,10 @@ impl engine::gamesys::Reflection for Image {
         let mut register = Box::new(Register::new(Box::new(self)));
 
         register.addProp(Property { 
-            name: Box::new("image_file"), 
+            name: Box::new("texture"), 
             desc: Box::new("Path to image file"), 
-            reference: Box::new(&self.image_file), 
-            ref_type: std::any::TypeId::of::<Asset>() });
+            reference: Box::new(&self.texture.asset_path), 
+            ref_type: std::any::TypeId::of::<Texture>() });
 
         Ptr { b: register }
     }
@@ -55,11 +57,11 @@ impl BaseComponent for Image {
 
 impl Constructor<Image> for Image {
     unsafe fn construct(entity: EntityPtr, definition: &ConstructorDefinition) -> Option<ComponentRef<Image>> {
-        let map = definition.get("image_file").expect("Failed to Build Image");
-        let path = String::from(map.get("path").unwrap().as_str().unwrap());
-        println!("{}", path);
+        let value = definition.get("texture").expect("Failed to Build Image");
+        let path = value.as_str().expect("Failed to load Texture path!!");
+        //println!("{}", path);
         Some(ComponentRef_new(Self {
-            image_file: Asset::from_path(path.clone()),
+            texture: AssetManager::load_asset(path),
             p_Entity: entity.clone()
         }))
 
@@ -67,9 +69,7 @@ impl Constructor<Image> for Image {
 
     fn default_constuctor_definition() -> ConstructorDefinition {
         std::sync::Arc::new(
-            Value::Component(String::from("image_file"), std::sync::Arc::new(
-                Value::Component("path".to_string(), std::sync::Arc::new(Value::String(String::new())))
-            )),
+            Value::Component(String::from("texture"), std::sync::Arc::new( Value::String(String::new()))),
             
         )
     }
@@ -99,13 +99,6 @@ impl Image {
         ];
         
         
-        let mut image_file = self.image_file.open_as_file();
-        
-        let image = image_file.read();
-
-        let mut image_bytes = image.as_bytes();
-
-        let image_idat = imagine::png::PngRawChunkIter::new(&image_bytes).enumerate();
         unsafe{
             let mut p_render_sys = Env::get_render_sys().clone();
             let mut render_sys = p_render_sys.write();

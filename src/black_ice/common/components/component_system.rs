@@ -362,7 +362,7 @@ impl ValueBuilder {
                                     i = iter.next().unwrap();
                                 }
                             }
-                            println!("{}", i);
+                            //println!("{}", i);
                             continue;
                         }
                     }
@@ -630,7 +630,7 @@ impl ComponentSystem {
     }
 
     pub fn entity_add_component(&mut self, entity: EntityID, component: ComponentRef<dyn BaseComponent>){
-        println!("Adding component!!");
+        //println!("Adding component!!");
         let register = self.component_register.as_mut();
         for (entity_id, mut vec) in register.to_vec()
         {

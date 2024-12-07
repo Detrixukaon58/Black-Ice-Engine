@@ -158,7 +158,7 @@ impl InputSystem {
 
     pub fn start(p_this: Arc<Mutex<Self>>) {
         let mut this = p_this.lock();
-        println!("{}", "Starting Input Thread!!".yellow());
+        //println!("{}", "Starting Input Thread!!".yellow());
         this.ready = true;
     }
 

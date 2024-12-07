@@ -1,6 +1,7 @@
 
 use std::sync::Arc;
 use std::{fmt, error::Error};
+use crate::black_ice::common::engine::asset_mgr::AssetData;
 
 pub mod shader_asset;
 
@@ -37,7 +38,7 @@ pub trait AssetResource {
 
     fn new() -> Self;
 
-    fn init(&mut self, data: InputData); // loads the asset's data. This needs to be defined in order for the
+    fn init(&mut self, data: Arc<AssetData>); // loads the asset's data. This needs to be defined in order for the
     // asset manager to be able to process your custom asset resource
 
     fn update(&mut self) -> Result<OutputData, AssetResourceUpdateError>{

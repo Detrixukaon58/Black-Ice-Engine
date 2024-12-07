@@ -52,12 +52,16 @@ pub struct ShaderData {
 
 impl ShaderData {
     fn include_shaders() -> glsl_include::Context<'static> {
-        let engine_path: String = Asset::new();
-        let asset_path: String = Asset::new();
-        
-
-
+        // load shaders that have been registered through the asset pack system
+        // these usually will be tested for when we look at the file metadata!!
         let mut context: glsl_include::Context = glsl_include::Context::new();
+        unsafe{
+            let mut p_asset_mg = Env::get_asset_mgr();
+            let mut asset_mgr = p_asset_mg.lock();
+            
+
+
+        
 
         // go through the directory and find all includable shaders!!!
 
@@ -66,7 +70,7 @@ impl ShaderData {
         // .hlsl
         // 
         
-
+        }
 
 
         return context;
@@ -233,6 +237,7 @@ struct ShaderToken {
 impl Shader {
     /// Opens .shad, .glsl or .comp shader files
     pub fn new(path: String) -> Self {
+        // TODO: Need to re-implement this with the new asset system
         // This opens either .shad, .glsl or .comp shader files!!
         // get the file extention
         let mut file = FileSys::new();

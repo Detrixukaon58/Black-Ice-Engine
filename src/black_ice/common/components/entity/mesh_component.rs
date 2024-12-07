@@ -102,9 +102,9 @@ impl MeshComponent {
             let p_rend_sys = Env::get_render_sys();
             
             let mut rend_sys = p_rend_sys.write();
-            println!("{}", "Adding Mesh".red());
+            //println!("{}", "Adding Mesh".red());
             
-            println!("{}", "Added Mesh".blue());
+            //println!("{}", "Added Mesh".blue());
         }
     }
     pub fn update_mesh(&self) {
