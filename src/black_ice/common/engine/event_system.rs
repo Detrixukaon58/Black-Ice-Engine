@@ -65,8 +65,7 @@ impl EventSystem {
                     event::Event::Window { timestamp, window_id, win_event } => {
                         match win_event {
                             event::WindowEvent::Resized(x, y) => {
-                                Env::get_env().window_x = x as u32;
-                                Env::get_env().window_y = y as u32;
+                                
                             }
                             _ => {}
                         }

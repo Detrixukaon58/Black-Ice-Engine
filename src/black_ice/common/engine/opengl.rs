@@ -102,7 +102,8 @@ impl OGlRender for Pipeline {
 
                 }
                 else{
-                    driver.gl.as_ref().unwrap().Viewport(0, 0, Env::get_env().window_x as i32, Env::get_env().window_y as i32);
+                    let (window_x, window_y) = Env::get_window_size();
+                    driver.gl.as_ref().unwrap().Viewport(0, 0, window_x as i32, window_y as i32);
                 }
                 // println!("{}", pipeline.meshs.len());
                 

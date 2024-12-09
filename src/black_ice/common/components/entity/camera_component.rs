@@ -59,7 +59,8 @@ impl BaseComponent for CameraComponent {
                     ));
                     
                 }
-                println!("{:?}, {:?}", self.test.y, self.test.p);
+                //println!("{:?}, {:?}", self.test.y, self.test.p);
+                //println!("Frame Time: {}", frame_time);
                 self.look_at(
                     self.p_entity.get_world_tm() * self.transform.get_world_tm() * Vec3::new(0.0, 0.0, 0.0), 
                     self.p_entity.get_world_tm() * self.transform.get_world_tm() * self.forward
@@ -130,8 +131,9 @@ impl CameraComponent {
                 //render_sys.camera_set_render_texture(self.camera_id, , width, height)
             }
             else{
-                let width = Env::get_env().window_x as f32;
-                let height = Env::get_env().window_y as f32;
+                let (window_x, window_y) = Env::get_window_size();
+                let width = window_x as f32;
+                let height = window_y as f32;
                 let depth = 1000.0;
                 let ratio = width / height;
                 // self.projection.ortho_projection(- width / 2.0, width / 2.0, height/ 2.0, -height/ 2.0, -depth / 2.0, depth / 2.0);

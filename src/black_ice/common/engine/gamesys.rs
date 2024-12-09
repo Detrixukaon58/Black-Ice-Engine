@@ -277,8 +277,13 @@ pub struct Env {
 
 impl Env {
     pub unsafe fn isExit() -> bool {
-        let env = Env::get_env();
+        
         'run: loop {
+            let p_env = Env::get_env();
+            let env = match p_env.try_lock(){
+                Some(c) => c,
+                None => continue 'run
+            };
             let status = match env.STATUS.try_lock() {
                 Some(v) => v,
                 None => continue 'run
@@ -354,7 +359,7 @@ impl Env {
         }
     }
 
-    pub fn init(&'static mut self) {
+    pub fn init() {
         // Set up thread pool
 
         let runner = async{
@@ -362,18 +367,25 @@ impl Env {
             
             AssetManager::load_asset_folder("/home/detrix/rust/black-ice/assets".to_string());
             
-            let p_render_sys = self.RENDER_SYS.clone();
-            let p_entity_sys = self.ENTITY_SYS.clone();
-            let p_input_sys = self.INPUT_SYS.clone();
-            let p_event_system = self.EVENT_SYS.clone();
+            // we will get the environment while we still can !!
+            // we do not want to constantly own the environment so that other threads can access it safely!!
+            let p_env = Env::get_env();
+            let env = p_env.lock();
+
+            let p_render_sys = env.RENDER_SYS.clone();
+            let p_entity_sys = env.ENTITY_SYS.clone();
+            let p_input_sys = env.INPUT_SYS.clone();
+            let p_event_system = env.EVENT_SYS.clone();
             let event_join_handdle = std::thread::Builder::new().name("Event".to_string()).spawn(|| {EventSystem::init(p_event_system)}).unwrap();
             let render_join_handle = std::thread::Builder::new().name(String::from("render")).spawn(|| {RenderPipelineSystem::init(p_render_sys)}).expect("Failed to create render thread!!");
             let entity_join_handle = std::thread::Builder::new().name(String::from("entity")).spawn(|| {EntitySystem::init(p_entity_sys)}).expect("Failed to start entity thread!!");
             let input_join_handle = std::thread::Builder::new().name("Input".to_string()).spawn(|| {InputSystem::init(p_input_sys)}).unwrap();
-            let p_ent_sys_2 = self.ENTITY_SYS.clone();
-            let p_rend_sys_2 = self.RENDER_SYS.clone();
-            let p_input_sys_2 = self.INPUT_SYS.clone();
-            let p_event_sys_2 = self.EVENT_SYS.clone();
+            let p_ent_sys_2 = env.ENTITY_SYS.clone();
+            let p_rend_sys_2 = env.RENDER_SYS.clone();
+            let p_input_sys_2 = env.INPUT_SYS.clone();
+            let p_event_sys_2 = env.EVENT_SYS.clone();
+            drop(env);
+            drop(p_env);
             let mut ent_sys_2 = p_ent_sys_2.lock();
             let mut entity_params = components::entity::entity_system::EntityParams {
                 position: vertex::Vec3::new(0, 0, 0),
@@ -458,48 +470,79 @@ impl Env {
     }
 
     pub unsafe fn set_status(status: StatusCode){
-        *Env::get_env().STATUS.lock() = status.clone();
-        let p_rend = Env::get_render_sys().clone();
-        let p_ent = Env::get_entity_sys().clone();
+        
+            let mut p_env = Env::get_env();
+            let mut env = p_env.lock();
+            *env.STATUS.lock() = status.clone();
+            drop(env);
+            let p_rend = Env::get_render_sys().clone();
+            let p_ent = Env::get_entity_sys().clone();
 
-        RenderPipelineSystem::send_status(p_rend, status.clone());
-        EntitySystem::send_status(p_ent, status.clone());
+            RenderPipelineSystem::send_status(p_rend, status.clone());
+            EntitySystem::send_status(p_ent, status.clone());
 
-        //rend.send_status(status.clone());
-        //drop(rend);
-        //ent.send_status(status.clone());
-        //drop(ent);
-        return;
+            //rend.send_status(status.clone());
+            //drop(rend);
+            //ent.send_status(status.clone());
+            //drop(ent);
+            return;
+        
     }
 
     pub unsafe fn cursor_is_hidden() -> bool 
     {
-        Env::get_env().show_cursor
+
+            let mut p_env = Env::get_env();
+            let mut env = p_env.lock();
+            return env.show_cursor.clone()
+        
     }
 
     pub unsafe fn get_render_sys() -> Arc<RwLock<RenderPipelineSystem>> {
-        Env::get_env().RENDER_SYS.clone()
+
+            let mut p_env = Env::get_env();
+            let mut env = p_env.lock();
+            return env.RENDER_SYS.clone()
+        
     }
 
     pub unsafe fn get_entity_sys() -> components::component_system::ComponentRef<EntitySystem> {
-        Env::get_env().ENTITY_SYS.clone()
+
+            let mut p_env = Env::get_env();
+            let mut env = p_env.lock();
+            return env.ENTITY_SYS.clone()
+        
     }
 
     pub unsafe fn get_input_sys() -> Arc<Mutex<InputSystem>> {
-        Env::get_env().INPUT_SYS.clone()
+
+            let mut p_env = Env::get_env();
+            let mut env = p_env.lock();
+            return env.INPUT_SYS.clone()
+        
     }
 
     pub unsafe fn get_asset_mgr() -> Arc<Mutex<common::engine::asset_mgr::AssetManager>> {
-        Env::get_env().ASSET_MGR.clone()
+        
+        let mut p_env = Env::get_env();
+        let mut env = p_env.lock();
+        return env.ASSET_MGR.clone()
+        
     }
 
-    pub fn get_env() -> &'static mut Env {
+    pub fn get_env() -> Arc<Mutex<Env>> {
         unsafe{
         
-        ENV.as_mut().expect("Game has not been initialized!!")
+        ENV.clone().expect("Game has not been initialized!!")
         }
+    }
+
+    pub fn get_window_size() -> (u32, u32) {
+        let mut p_env = Env::get_env();
+        let mut env = p_env.lock();
+        (env.window_x.clone(), env.window_y.clone())
     }
 
 }
 
-pub static mut ENV: Lazy<Option<Env>> = Lazy::new( || {None});
+pub static mut ENV: Lazy<Option<Arc<Mutex<Env>>>> = Lazy::new( || {None});
