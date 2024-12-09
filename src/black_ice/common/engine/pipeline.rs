@@ -14,7 +14,7 @@ use sdl2::*;
 use colored::*;
 
 
-use crate::black_ice::common::materials::*;
+use crate::black_ice::common::engine::asset_types::{materials::*, shader_asset::*};
 use crate::black_ice::common::matrices::*;
 use crate::black_ice::common::mesh::*;
 use crate::black_ice::common::engine::*;
@@ -167,6 +167,7 @@ pub struct RenderPipelineSystem {
     pub sdl: Arc<Mutex<sdl2::Sdl>>,
     shader_stages_data: Vec<ShaderStage>,
     registered_images: HashMap<String, Arc<Mutex<Image>>>,
+    pub registered_shaders: HashMap<String, (String, Vec<u8>)>,
 
 }
 
@@ -328,6 +329,14 @@ impl RenderPipelineSystem{
         self.registered_images.get(&image_name).cloned().ok_or(std::io::ErrorKind::NotFound)
     }
 
+    pub fn register_shader_data(shader_name: String, asset_path: String, data: Vec<u8>) {
+        unsafe {
+            let p_render_sys = Env::get_render_sys();
+            let mut render_sys = p_render_sys.write();
+            render_sys.registered_shaders.insert(shader_name, (asset_path, data));
+        }
+    }
+
     pub fn new(sdl: Arc<Mutex<Sdl>>, video: Arc<Mutex<sdl2::VideoSubsystem>>, window: Arc<Mutex<sdl2::video::Window>>) -> RenderPipelineSystem {
 
         let pip_sys = RenderPipelineSystem {
@@ -345,7 +354,8 @@ impl RenderPipelineSystem{
             video: video,
             sdl: sdl,
             shader_stages_data: vec![],
-            registered_images: HashMap::<String, Arc<Mutex<Image>>>::new()
+            registered_images: HashMap::<String, Arc<Mutex<Image>>>::new(),
+            registered_shaders: HashMap::new(),
         };
         return pip_sys;
     }

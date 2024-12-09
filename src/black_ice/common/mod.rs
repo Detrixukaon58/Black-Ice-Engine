@@ -8,7 +8,6 @@ pub mod transform;
 pub mod filesystem;
 pub mod engine;
 pub mod textures;
-pub mod materials;
 pub mod components;
 
 impl Base for Vec<Vec3>{}

@@ -5,7 +5,8 @@ use std::sync::Arc;
 use shaderc::CompileOptions;
 use std::any::TypeId;
 
-use crate::black_ice::common::{APP_DIR, materials};
+use crate::black_ice::common::engine::asset_types::shader_asset;
+use crate::black_ice::common::{APP_DIR, engine::asset_types::materials};
 use crate::black_ice::common::engine::gamesys::*;
 
 #[cfg(target_os = "windows")] const ASSET_PATH: &str =  "F:\\Rust\\Program 1\\assets";
@@ -266,7 +267,7 @@ impl AsShaderFile for FileSys {
             }
             let path_unwraped = current_path.unwrap().unwrap();
             let path_path = path_unwraped.path();
-            if path_path.is_file() && materials::compare(path_unwraped.file_name().to_str().unwrap()) {
+            if path_path.is_file() && shader_asset::compare(path_unwraped.file_name().to_str().unwrap()) {
                 let path_file_name = path_unwraped.file_name();
                 let path_file_str = path_file_name.as_os_str().to_str().unwrap();
                 

@@ -58,3 +58,4 @@ pub trait AssetResource {
 
 
 pub mod texture;
+pub mod materials;

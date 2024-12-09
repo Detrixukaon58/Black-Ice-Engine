@@ -18,6 +18,7 @@ use crate::black_ice::common::Env;
 use crate::black_ice::common::engine::asset_types::*;
 
 use super::input;
+use super::pipeline::RenderPipelineSystem;
 
 #[derive(PartialEq, Clone)]
 enum PathType {
@@ -462,7 +463,7 @@ impl AssetFolder {
 
                         let file_type = match file_extension.clone().to_lowercase().as_str() {
                             "png" | "jpeg" | "bmp" | "tga" | "dxt" | "dds" => "Image".to_string(),
-                            "glsl" | "hlsl" | "pfx" | "comp" | "vert" | "frag" | "gdshad" | "fx" => "Shader".to_string(),
+                            "glsl" | "hlsl" | "pfx" | "comp" | "vert" | "frag" | "gdshad" | "fx" | "shad" => "Shader".to_string(),
                             "obj" | "gltf" | "glb" | "stl" => "Mesh".to_string(),
                             "txt" | "json" | "xml" => "Text".to_string(), 
                             _ => "custom".to_string()
@@ -483,8 +484,13 @@ impl AssetFolder {
                             },
                             "Shader" => {
                                 // we need to preload this in order to ensure that we have the shaders ready!!
-
-                                
+                                let shader_name = dir_path.file_name().unwrap().to_str().unwrap();
+                                let relative = dir_path.strip_prefix(path.clone()).unwrap().to_path_buf();
+                                let asset_path = "ASSET:".to_string() + path.file_stem().unwrap().to_str().unwrap() + "/" + relative.to_str().unwrap();
+                                let mut file = File::open(dir_path.clone()).unwrap();
+                                let mut data: Vec<u8> = vec![];
+                                let _ = file.read_to_end(&mut data);
+                                RenderPipelineSystem::register_shader_data(String::from(shader_name), asset_path, data);
                             }
                             _ => {}
                         };
@@ -674,7 +680,9 @@ impl AssetManager {
                     let file = File::open(temp.get_file_path().expect("No file path associated with this path!! This is a bug!!")).expect("Failed to open the asset file!!");
                     let mut reader = BufReader::new(file);
                     let mut data: Vec<u8> = Vec::<u8>::new();
-                    let _ = reader.read_to_end(&mut data);
+                    if temp.meta_data["type"] != "Shader".to_string() {// we don't want to read shaders from here!! They will be pre loaded by the render pipeline system
+                        let _ = reader.read_to_end(&mut data);
+                    }
                     let d = Arc::new(
                         AssetData {
                             asset_name: temp.name.clone(),

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use parking_lot::*;
 use crate::black_ice::common::{vertex::*, transform::*, engine::gamesys::*};
 use crate::black_ice::common::filesystem::files::*;
-use crate::black_ice::common::{materials::*, *};
+use crate::black_ice::common::{engine::asset_types::materials::*, *};
 
 use super::components::component_system::ConstructorDefinition;
 

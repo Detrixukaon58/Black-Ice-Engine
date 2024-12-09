@@ -6,11 +6,12 @@ use std::{collections::HashMap, f32::consts::PI, fs::File, mem::{size_of_val, si
 
 
 use colored::Colorize;
+use engine::asset_types::shader_asset::ShaderLang;
 use gl46::*;
 use sdl2::{video::GLContext, surface};
-use crate::black_ice::common::{angles::{QuatConstructor, Quat}, engine::pipeline::RenderPipelineSystem, materials::*, matrices::*, mesh::Mesh, vertex::*, *};
+use crate::black_ice::common::{angles::{QuatConstructor, Quat}, engine::pipeline::RenderPipelineSystem, matrices::*, mesh::Mesh, vertex::*, *};
 use parking_lot::*;
-use self::materials::ShaderType;
+use self::engine::asset_types::{shader_asset::ShaderType, materials::*};
 
 use super::pipeline::{Pipeline, Camera, DataSet, Data};
 

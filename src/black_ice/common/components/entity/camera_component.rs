@@ -59,6 +59,7 @@ impl BaseComponent for CameraComponent {
                     ));
                     
                 }
+                println!("{:?}, {:?}", self.test.y, self.test.p);
                 self.look_at(
                     self.p_entity.get_world_tm() * self.transform.get_world_tm() * Vec3::new(0.0, 0.0, 0.0), 
                     self.p_entity.get_world_tm() * self.transform.get_world_tm() * self.forward
