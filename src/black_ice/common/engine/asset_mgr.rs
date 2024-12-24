@@ -4,7 +4,8 @@
 use std::collections::{HashMap, VecDeque};
 use std::error::Error;
 use std::hash::Hash;
-use std::os::unix::fs::MetadataExt;
+#[cfg(target_os="linux")]use std::os::unix::fs::MetadataExt;
+#[cfg(target_os="windows")]use std::os::windows::fs::MetadataExt;
 use std::str::FromStr;
 use std::{fmt, io};
 use std::{fs::File, path::PathBuf};
@@ -499,7 +500,8 @@ impl AssetFolder {
 
                         let mut rep = PathRep::new(String::from(dir_path.file_name().unwrap().to_str().unwrap()), PathType::FILE, Some(meta_data));
                         
-                        rep.set_data_size(file_metadata.size());
+                        #[cfg(target_os="windows")]rep.set_data_size(file_metadata.file_size());
+                        #[cfg(target_os="linux")]rep.set_data_size(file_metadata.size());
                         rep.set_file_path(dir_path.clone());
                         current.3.insert(String::from(dir_path.file_name().unwrap().to_str().unwrap()), rep);
                         
