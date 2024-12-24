@@ -12,50 +12,24 @@ use ash::extensions::khr::*;
 use ash::vk::Handle;
 
 use sdl2::raw_window_handle::*;
-
-
-use crate::black_ice::common::materials::*;
 use crate::black_ice::common::filesystem::files::ShaderFile;
-
+use crate::black_ice::common::engine::gamesys::Env;
 use super::gamesys::*;
 use super::pipeline::*;
 
-
-pub trait VulkanRender {
-    fn init(p_this: Arc<Mutex<Self>>) -> i32;
-    fn render(p_this: Arc<Mutex<Self>>) -> i32;
-    fn init_mesh(p_this: Arc<Mutex<Self>>) -> i32;
+#[derive(Clone)]
+pub enum TextureType {
+    RGB,
+    DEPTH
 }
 
-
-impl VulkanRender for Pipeline {
-    fn init(p_this: Arc<Mutex<Self>>) -> i32 {
-        
-        0
-    }
-
-    fn render(p_this: Arc<Mutex<Self>>) -> i32 {
-        0
-    }
-
-    fn init_mesh(p_this: Arc<Mutex<Self>>) -> i32 {
-        let this = p_this.lock().unwrap();
-        let mut p_driver = this.driver.lock().unwrap();
-        let driver = p_driver.as_mut().unwrap();
-        // Rendering per mesh
-        // First generate all shaders and vertex buffers
-        for m in &this.meshs {
-            let mut mesh = m.lock().unwrap();
-            // first the shader, we must compile and generate a pipeline
-            //mesh.material.bake(DriverValues::get_current_logical_device(driver));
-            
-            // Get vertex, index, texcoord buffers
-            
-        }
-        0
-    }
+#[derive(Clone)]
+pub struct RenderTexture {
+    inner: u32,
+    width: i32,
+    height: i32,
+    texture_type: TextureType
 }
-
 
 #[derive(Default, Clone)]
 pub struct DriverValues {
@@ -116,7 +90,7 @@ impl PipelineValues {
 
 impl DriverValues {
     #[cfg(feature = "vulkan")]
-    pub unsafe fn init_vulkan(driver:&mut DriverValues)  {
+    pub unsafe fn init_vulkan(driver:&mut DriverValues, window: &sdl2::video::Window, video: &sdl2::VideoSubsystem)  {
         
         let entry = ash::Entry::load().expect("Failed to get entry!");
         // std::thread::sleep(std::time::Duration::from_secs(1));
@@ -131,7 +105,7 @@ impl DriverValues {
 
         let mut app_info = vk::ApplicationInfo::default();
         app_info.s_type = vk::StructureType::APPLICATION_INFO;
-        let game_name =  GAME.gameName.lock().unwrap().clone();
+        let game_name =  Env::get_game_name();
         let gm = std::ffi::CString::new(game_name.as_str()).unwrap();
         app_info.p_application_name = gm.as_ptr();
         app_info.application_version = vk::make_api_version(0, 0, 1, 0);
@@ -140,7 +114,7 @@ impl DriverValues {
         app_info.engine_version = vk::make_api_version(0, 0, 1, 0);
         app_info.api_version = vk::make_api_version(0, 1, 3, 241);
         
-        let mut extension_names = Self::get_window_extentions();
+        let mut extension_names = Self::get_window_extentions(window);
         extension_names.push(ash::extensions::ext::DebugUtils::name().to_str().unwrap());
         // #[cfg(target_os = "linux")] extension_names.push(ash::extensions::khr::XlibSurface::name().to_str().unwrap());
         for ext in extension_names.to_vec() {
@@ -186,7 +160,7 @@ impl DriverValues {
         ];
 
         DriverValues::get_debug_messanger(driver);
-        DriverValues::get_surface(driver);
+        DriverValues::get_surface(driver, window);
         DriverValues::register_physical_devices(driver, physical_devices);
         DriverValues::create_logical_devices(driver);
         DriverValues::choose_best_device(driver);
@@ -198,23 +172,6 @@ impl DriverValues {
         // vt_input.input_rate = vk::VertexInputRate::VERTEX;
         // vt_input.stride = std::mem::size_of::<[f32; 3]>() as u32;
         // vt_input.binding = 0;
-        
-    }
-
-    #[cfg(feature = "vulkan")]
-    pub unsafe fn register_shader(driver:&mut Self, shader_name: String, shader: Shader) -> usize {
-
-        let frag_shader: &ShaderFile = &shader.fragment_file;
-        let vert_shader: &ShaderFile = &shader.vertex_file;
-        match driver.shader_stages.iter().position(|(a,b,c)| a.eq(&shader_name)) {
-            Some(v) => return v,
-            None => {}
-        }
-
-        let out = driver.shader_stages.len();
-        driver.shader_stages.push((shader_name, frag_shader.code.clone(), vert_shader.code.clone()));
-        
-        out
         
     }
 
@@ -424,7 +381,7 @@ impl DriverValues {
     }
 
     #[cfg(feature = "vulkan")]
-    unsafe fn get_window_extentions() -> Vec<&'static str> {
+    unsafe fn get_window_extentions(window: &sdl2::video::Window) -> Vec<&'static str> {
         #[cfg(target_os = "windows")]
         unsafe fn get_window_extentions_a() -> Vec<*const i8> {
             let mut window_info: sdl2::raw_window_handle::SDL_SysWMinfo = std::mem::zeroed();
@@ -446,7 +403,7 @@ impl DriverValues {
 
 
         #[cfg(target_os = "linux")]
-        unsafe fn get_window_extentions_a() -> Vec<*const i8> {
+        unsafe fn get_window_extentions_a(window: &sdl2::video::Window) -> Vec<*const i8> {
 
             let process = std::process::Command::new("sh").arg("-c").arg("echo $XDG_SESSION_TYPE").output().unwrap();
             let windowing = std::str::from_utf8_unchecked(process.stdout.as_slice());
@@ -455,7 +412,7 @@ impl DriverValues {
 
                 "wayland\n" =>{
                     let mut window_info: sdl2::raw_window_handle::SDL_SysWMinfo = std::mem::zeroed();
-                    SDL_GetWindowWMInfo(GAME.window.raw(), &mut window_info);
+                    SDL_GetWindowWMInfo(window.raw(), &mut window_info);
 
                     let mut display_handle = raw_window_handle::WaylandDisplayHandle::empty();
                     
@@ -470,7 +427,7 @@ impl DriverValues {
                 }
                 "x11\n" => {
                     let mut window_info: sdl2::raw_window_handle::SDL_SysWMinfo = std::mem::zeroed();
-                    SDL_GetWindowWMInfo(GAME.window.raw(), &mut window_info);
+                    SDL_GetWindowWMInfo(window.raw(), &mut window_info);
     
                     let mut display_handle = raw_window_handle::XlibDisplayHandle::empty();
                     
@@ -506,7 +463,7 @@ impl DriverValues {
 
         }
 
-        get_window_extentions_a().iter().map(|s| std::ffi::CStr::from_ptr(s.clone()).to_str().unwrap()).collect()
+        get_window_extentions_a(window).iter().map(|s| std::ffi::CStr::from_ptr(s.clone()).to_str().unwrap()).collect()
     }
 
     #[cfg(feature = "vulkan")]
@@ -569,7 +526,7 @@ impl DriverValues {
     unsafe fn create_swap_chain(driver:&mut DriverValues) {
 
 
-        'run: loop{
+
             let physical_devices = driver.physical_devices.clone();
             let device = physical_devices[driver.chosen_device].1;
             let chosen_device = driver.chosen_device.clone();
@@ -641,8 +598,8 @@ impl DriverValues {
             driver.swap_chain_images = swap_chain.get_swapchain_images(driver.swap_chain.unwrap()).expect("Failed to get swapchain images!!");
             driver.swap_chain_image_format = Some(surface_format.format);
             driver.swap_chain_extent = Some(extent);
-            break 'run;
-        }
+
+
 
     }
 
@@ -652,7 +609,7 @@ impl DriverValues {
             return capabilities.current_extent;
         }
 
-        let (height, width) = GAME.window.size();
+        let (height, width) = Env::get_window_size();
 
         let mut actual_extents = vk::Extent2D::builder()
             .height(height)
@@ -878,14 +835,14 @@ impl DriverValues {
     }
 
     #[cfg(feature = "vulkan")]
-    pub unsafe fn get_surface(driver: &mut DriverValues){
+    pub unsafe fn get_surface(driver: &mut DriverValues, window: &sdl2::video::Window){
 
         
 
         #[cfg(target_os = "windows")]
-        unsafe fn get_surface_a(driver: &mut DriverValues) -> Option<vk::SurfaceKHR> {
+        unsafe fn get_surface_a(driver: &mut DriverValues, window: &sdl2::video::Window) -> Option<vk::SurfaceKHR> {
             let mut window_info: sdl2::raw_window_handle::SDL_SysWMinfo = std::mem::zeroed();
-            let bb  = SDL_GetWindowWMInfo(GAME.window.raw(), &mut window_info);
+            let bb  = SDL_GetWindowWMInfo(window.raw(), &mut window_info);
 
             let display_handle = raw_window_handle::WindowsDisplayHandle::empty();
 
@@ -905,10 +862,10 @@ impl DriverValues {
 
 
         #[cfg(target_os = "linux")]
-        unsafe fn get_surface_a(driver: &mut DriverValues) -> Option<vk::SurfaceKHR> {
+        unsafe fn get_surface_a(driver: &mut DriverValues, window: &sdl2::video::Window) -> Option<vk::SurfaceKHR> {
             // Assume wayland!!
             let mut window_info: sdl2::raw_window_handle::SDL_SysWMinfo = std::mem::zeroed();
-            SDL_GetWindowWMInfo(GAME.window.raw(), &mut window_info);
+            SDL_GetWindowWMInfo(window.raw(), &mut window_info);
 
             let mut display_handle = raw_window_handle::WaylandDisplayHandle::empty();
 
@@ -927,10 +884,10 @@ impl DriverValues {
         }
 
         #[cfg(target_os = "macos")]
-        unsafe fn get_surface_a(driver: &mut DriverValues) -> Option<vk::SurfaceKHR> {
+        unsafe fn get_surface_a(driver: &mut DriverValues, window: &sdl2::video::Window) -> Option<vk::SurfaceKHR> {
 
             let mut window_info: sdl2::raw_window_handle::SDL_SysWMinfo = std::mem::zeroed();
-            SDL_GetWindowWMInfo(GAME.window.raw(), &mut window_info);
+            SDL_GetWindowWMInfo(window.raw(), &mut window_info);
 
             let mut display_handle = raw_window_handle::AppKitDisplayHandle::empty();
 
@@ -951,7 +908,7 @@ impl DriverValues {
 
         let handle = driver.instance.as_ref().unwrap().handle().as_raw();
 
-        let surface_khr = GAME.window.vulkan_create_surface(handle as usize).expect("failed to create surface");
+        let surface_khr = window.vulkan_create_surface(handle as usize).expect("failed to create surface");
 
         driver.surface = Some(vk::SurfaceKHR::from_raw(surface_khr));
 
@@ -983,67 +940,38 @@ impl DriverValues {
         
     }
 
+    pub unsafe fn create_render_texture(this: &mut Self, width: i32, height: i32, texture_type: TextureType) -> RenderTexture
+    {
+        
+    }
+
 }
+
+
+pub trait VulkanRender {
+    fn init(th: Arc<Mutex<Self>>) -> i32;
+    fn render(th: Arc<Mutex<Self>>, p_window: Arc<Mutex<sdl2::video::Window>>, p_video: Arc<Mutex<sdl2::VideoSubsystem>>) -> i32;
+    fn cleanup(th:Arc<Mutex<Self>>);
+}
+
+impl VulkanRender for Pipeline {
+    fn init(th: Arc<Mutex<Self>>) -> i32 {
+        0
+    }
+
+    fn render(th: Arc<Mutex<Self>>, p_window: Arc<Mutex<sdl2::video::Window>>, p_video: Arc<Mutex<sdl2::VideoSubsystem>>) -> i32 {
+        todo!()
+    }
+
+    fn cleanup(th:Arc<Mutex<Self>>) {
+        todo!()
+    }
+}
+
 
 extern "C" {
     fn SDL_GetWindowWMInfo(window: *mut sdl2::sys::SDL_Window, info: *mut sdl2::raw_window_handle::SDL_SysWMinfo) -> sdl2::sys::SDL_bool;
 }
-
-#[cfg(feature = "vulkan")]
-pub trait BakeVulkan {
-    fn bake(&mut self, device: &ash::Device);
-}
-
-#[cfg(feature = "vulkan")]
-impl BakeVulkan for Material {
-    fn bake(&mut self, device: &ash::Device){
-        unsafe{
-            let vert_module_info = vk::ShaderModuleCreateInfo::builder()
-                .code(self.shader.vertex_file.code.as_slice())
-                .build();
-            let vert_module = device.create_shader_module(&vert_module_info, None).expect("Failed to load Vertex shader!!");
-            let vert_info = vk::PipelineShaderStageCreateInfo::builder()
-                .stage(vk::ShaderStageFlags::VERTEX)
-                .module(vert_module);
-            for (_name, (data, data_hint)) in &self.shader_descriptor{
-                let _hint = match data_hint {
-                    ShaderDataHint::Uniform => {},
-                    ShaderDataHint::In => {},
-                    ShaderDataHint::Out => {},
-                    ShaderDataHint::InOut => {},
-                    ShaderDataHint::Buffer => {},
-                };
-                match data.as_ref() {
-                    ShaderType::Integer(i) => {
-                        let layout_binging = vk::DescriptorSetLayoutBinding::builder()
-                            .binding(0)
-                            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                            .build();
-                    },
-                    ShaderType::Boolean(b) => {},
-                    ShaderType::UnsignedInteger(ui) => {},
-                    ShaderType::Float(f) => {},
-                    ShaderType::Double(d) => {},
-                    ShaderType::Vec3(v) => {},
-                    ShaderType::Vec4(v) => {},
-                    ShaderType::Vec2(v) => {},
-                    ShaderType::IVec3(v) => {},
-                    ShaderType::IVec4(v) => {},
-                    ShaderType::IVec2(v) => {},
-                    ShaderType::UVec3(v) => {},
-                    ShaderType::UVec4(v) => {},
-                    ShaderType::UVec2(v) => {},
-                    ShaderType::DVec3(v) => {},
-                    ShaderType::DVec4(v) => {},
-                    ShaderType::DVec2(v) => {},
-                    ShaderType::Sampler2D(v) => {},
-                }
-            }
-
-        }
-    }
-}
-
 
 pub unsafe extern "system" fn vulkan_debug_callback(
     message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,

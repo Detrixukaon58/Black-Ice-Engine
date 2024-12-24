@@ -36,7 +36,7 @@ use super::{super::super::engine::pipeline::RenderPipelineSystem, shader_asset::
 pub struct Material {
     
     pub shader: Shader,
-    pub shader_descriptor: HashMap<String, (Box<ShaderDataType>, ShaderDataHint)>,
+    pub shader_descriptor: HashMap<String, (Arc<Mutex<ShaderDataType>>, ShaderDataHint)>,
 
 }
 
@@ -48,8 +48,9 @@ impl Clone for Material {
         mat.shader_descriptor = HashMap::new();
         for param in self.shader_descriptor.keys() {
             let value = self.shader_descriptor.get(param).unwrap().clone();
+            let data_type = value.0.lock();
             
-            mat.shader_descriptor.insert(param.to_string(), (Box::new((*value.0).clone()), value.1.clone()));
+            mat.shader_descriptor.insert(param.to_string(), (Arc::new(Mutex::new(data_type.clone())), value.1.clone()));
         }
         return mat;
     }

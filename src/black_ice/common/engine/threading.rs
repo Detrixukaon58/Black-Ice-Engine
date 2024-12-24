@@ -16,7 +16,6 @@ pub enum ThreadData {
     Entity(EntityPtr),
     Component(EntityID, Arc<Mutex<dyn BaseComponent + Send>>),
     Pipeline(pipeline::PipelineParams),
-    Status(gamesys::StatusCode),
     EntityEvent(entity_event::Event),
     RenderData(),
     Camera(u32, Camera)

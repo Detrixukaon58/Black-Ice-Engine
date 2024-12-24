@@ -1,7 +1,8 @@
 #![feature(mutex_unlock)]
 #![allow(unused)]
 use std::any::Any;
-use std::io::Error;
+use std::io::{Error, ErrorKind};
+use std::os::raw::c_void;
 use raw_window_handle::HasRawWindowHandle;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -28,13 +29,14 @@ use super::threading::*;
 #[cfg(feature = "gles")] use super::gles::*;
 
 // generic data enum to let us handle acceptable types of data
+#[derive(Clone)]
 pub enum Data {
-    FloatSequence(String, Vec<f32>),
-    IntegerSequence(String, Vec<i32>),
-    I16Sequence(String, Vec<i16>),
-    DoubleSequence(String, Vec<f64>),
-    ImageSequence(String, Vec<[f32; 3]>),
-    Mesh(Arc<Mutex<Mesh>>),
+    FloatSequence(String, Arc<Mutex<Vec<f32>>>),
+    IntegerSequence(String, Arc<Mutex<Vec<i32>>>),
+    I16Sequence(String, Arc<Mutex<Vec<i16>>>),
+    DoubleSequence(String, Arc<Mutex<Vec<f64>>>),
+    ImageSequence(String, Arc<Mutex<Image>>),
+    Surface(Arc<Mutex<Surface>>),
     Float(String, f32),
     Integer(String, i32),
     I16(String, i16),
@@ -45,31 +47,20 @@ pub enum Data {
     IVector(String, Vec3),
     DVectorBuffer(String, Vec<Vec3>),
     DVector(String, Vec3),
+    MeshMatrix(String, Matrix34),
+    Matrix(String, Matrix34),
 
-}
-
-pub struct DataSet {
-    pub id: i32,
-    // an editable set of data that exists in heap
-    pub input_data: Arc<Mutex<Vec<Data>>>,
-    // read-only output of the data after each stage. You must make sure to know how mucb data is outputed from each stage to know what data you are getting
-    pub output: Arc<Mutex<Vec<Data>>>,
-    pub shader_stages: Vec<ShaderPtr>
-}
-
-impl DataSet {
-    fn new(id: i32, input: Arc<Mutex<Vec<Data>>>, output: Arc<Mutex<Vec<Data>>>, stages: Vec<ShaderPtr>) -> Self {
-        Self {id:id, input_data: input, output: output, shader_stages: stages }
-    }
 }
 
 pub struct Pipeline {
     pub id: i32,
     pub name: String,
-    pub data_sets: Vec<DataSet>,
     pub cameras: Vec<CameraDriver>,
     pub layer: u32,
     pub driver: Arc<Mutex<Option<DriverValues>>>,
+    pub shaders: HashMap<String, (u32, Vec<u32>)>,
+    pub shader_input: Arc<Mutex<Vec<(Shader, Vec<Data>)>>>,
+    pub shader_output: Arc<Mutex<Vec<(Shader, Vec<Data>)>>>,
     pub is_init: bool,
     counter: AtomicI32,
 }
@@ -89,10 +80,222 @@ impl Pipeline {
         self.cameras.push(CameraDriver::new(p_camera.clone()));
     }
 
-    pub fn register_data(&mut self, data: Arc<Mutex<Vec<Data>>>, stages: Vec<ShaderPtr>, id: i32){
-        let output = Arc::new(Mutex::new(Vec::new()));
-        self.data_sets.push(DataSet::new(id, data, output, stages));
+    pub fn register_shader_program(&mut self, shader: Shader) {
+        #[cfg(feature="opengl")] self.register_shader_program_gl(shader);
+        #[cfg(feature="vulkan")] self.register_shader_program_vk(shader);
+    }
+    
+    fn register_shader_program_gl(&mut self, shader: Shader) {
+        let shader_program: Option<(u32, Vec<u32>)> = self.shaders.get(&shader.asset_path).cloned();
         
+        
+        // check if the shader program exists
+        if shader_program.is_none() {
+            let mut p_driver = self.driver.lock();
+            let mut driver = p_driver.as_mut().unwrap();
+            let mut converted_stages: Vec<u32> = vec![];
+            for stage in shader.shader_stages.clone() {
+                // we need to check if there has already been a shader registered
+                // we don't want to keep running this
+                unsafe{
+                    let mut shader_stage = RenderPipelineSystem::get_shader_stage(stage);
+                    
+                    match shader_stage.shader_lang {
+                        ShaderLang::Glsl => {
+                            match shader_stage.shader_type {
+                                ShaderType::Compute => {
+                                    let shader_id = driver.gl.as_ref().unwrap().CreateShader(gl46::GL_COMPUTE_SHADER);
+
+                                    // Using SPIR-V 
+                                    // Always enter from "main"
+                                    if shader_stage.shader_data.compiled_data.is_none() {
+                                        panic!("Shader was not compiled!!!");
+                                    }
+                                    let p_binary = shader_stage.shader_data.compiled_data.expect("Failed to compile Shader!!!").clone();
+                                    let c_binary = p_binary.lock();
+                                    let binary = c_binary.clone();
+                                    drop(c_binary);
+                                    let length = binary.len().clone() as i32;
+                                    driver.gl.as_ref().unwrap().ShaderBinary(1, &shader_id, gl46::GL_SHADER_BINARY_FORMAT_SPIR_V, binary.as_ptr() as *const c_void, length);
+                                    driver.gl.as_ref().unwrap().SpecializeShader(shader_id, b"main".as_ptr(), 0, std::ptr::null(), std::ptr::null());
+                                    driver.gl.as_ref().unwrap().CompileShader(shader_id);
+                                    let mut compiled = 0;
+                                    driver.gl.as_ref().unwrap().GetShaderiv(shader_id, gl46::GL_COMPILE_STATUS, &mut compiled);
+
+                                    if compiled == 0 {
+                                        panic!("Failed to compile the shader for rendering!!!");
+                                    }
+                                    
+                                    converted_stages.push(shader_id);
+                                },
+                                ShaderType::Fragment => {
+                                    let shader_id = driver.gl.as_ref().unwrap().CreateShader(gl46::GL_FRAGMENT_SHADER);
+                                    println!("1{:?}", driver.gl.as_ref().unwrap().GetError());
+                                    // Using SPIR-V 
+                                    // Always enter from "main"
+                                    if shader_stage.shader_data.compiled_data.is_none() {
+                                        panic!("Shader was not compiled!!!");
+                                    }
+                                    let p_binary = shader_stage.shader_data.compiled_data.expect("Failed to compile Shader!!!").clone();
+                                    let c_binary = p_binary.lock();
+                                    let binary = c_binary.clone();
+                                    drop(c_binary);
+                                    let length = binary.len().clone() as i32;
+                                    driver.gl.as_ref().unwrap().ShaderBinary(1, &shader_id, gl46::GL_SHADER_BINARY_FORMAT_SPIR_V, binary.as_ptr() as *const c_void, length);
+                                    println!("2{:?}", driver.gl.as_ref().unwrap().GetError());
+                                    driver.gl.as_ref().unwrap().SpecializeShader(shader_id, b"main".as_ptr(), 0, 0 as *const _, 0 as *const _);
+                                    println!("3{:?}", driver.gl.as_ref().unwrap().GetError());
+                                    driver.gl.as_ref().unwrap().CompileShader(shader_id);
+                                    let mut compiled = 0;
+                                    driver.gl.as_ref().unwrap().GetShaderiv(shader_id, gl46::GL_COMPILE_STATUS, &mut compiled);
+                                    let mut len = 0;
+                                    let mut log: [u8; 512] = [0;512];
+                                    driver.gl.as_ref().unwrap().GetShaderInfoLog(shader_id, 512, &mut len, log.as_mut_ptr());
+                                    
+
+                                    if compiled == 0 {
+                                        println!("{:?}", String::from_utf8(log.to_vec()));
+                                        println!("4{:?}", driver.gl.as_ref().unwrap().GetError());
+                                        //println!("{:?}", binary);
+                                        panic!("Failed to compile the shader for rendering!!!");
+                                    }
+                                    
+                                    converted_stages.push(shader_id);
+                                    
+                                },
+                                ShaderType::Vertex => {
+                                    let mut shader_id = driver.gl.as_ref().unwrap().CreateShader(gl46::GL_VERTEX_SHADER);
+                                    // Using SPIR-V 
+                                    // Always enter from "main"
+                                    if shader_stage.shader_data.compiled_data.is_none() {
+                                        panic!("Shader was not compiled!!!");
+                                    }
+                                    let p_binary = shader_stage.shader_data.compiled_data.expect("Failed to compile Shader!!!").clone();
+                                    let c_binary = p_binary.lock();
+                                    let binary = c_binary.clone();
+                                    drop(c_binary);
+                                    let length = binary.len().clone() as i32;
+                                    driver.gl.as_ref().unwrap().ShaderBinary(1, &shader_id, gl46::GL_SHADER_BINARY_FORMAT_SPIR_V, binary.as_ptr() as *const c_void, length);
+                                    driver.gl.as_ref().unwrap().SpecializeShader(shader_id, b"main".as_ptr(), 0, std::ptr::null(), std::ptr::null());
+                                    
+                                    let mut compiled = 0;
+                                    driver.gl.as_ref().unwrap().GetShaderiv(shader_id, gl46::GL_COMPILE_STATUS, &mut compiled);
+
+                                    if compiled == 0 {
+                                       panic!("Failed to compile the shader for rendering!!!");
+                                    }
+                                    
+                                    converted_stages.push(shader_id);
+
+                                },
+                                ShaderType::Infer => {
+                                    let shader_type_infered = shader_stage.shader_data.infer_shader_type();
+                                    let shader_type = match shader_type_infered {
+                                        ShaderType::Compute => (gl46::GL_COMPUTE_SHADER),
+                                        ShaderType::Fragment => (gl46::GL_FRAGMENT_SHADER),
+                                        ShaderType::Vertex => (gl46::GL_VERTEX_SHADER),
+                                        _ => panic!("No shader type defined in file. Please add #pragma shader_type(shader type) to your file!!")
+                                    };
+                                    let mut shader_id = driver.gl.as_ref().unwrap().CreateShader(shader_type);
+                                    // Using SPIR-V 
+                                    // Always enter from "main"
+                                    if shader_stage.shader_data.compiled_data.is_none() {
+                                        panic!("Shader was not compiled!!!");
+                                    }
+                                    let p_binary = shader_stage.shader_data.compiled_data.expect("Failed to compile Shader!!!").clone();
+                                    let c_binary = p_binary.lock();
+                                    let binary = c_binary.clone();
+                                    drop(c_binary);
+                                    let length = binary.len().clone() as i32;
+                                    driver.gl.as_ref().unwrap().ShaderBinary(1, &shader_id, gl46::GL_SHADER_BINARY_FORMAT_SPIR_V, binary.as_ptr() as *const c_void, length);
+                                    driver.gl.as_ref().unwrap().SpecializeShader(shader_id, b"main".as_ptr(), 0, std::ptr::null(), std::ptr::null());
+                                    
+                                    let mut compiled = 0;
+                                    driver.gl.as_ref().unwrap().GetShaderiv(shader_id, gl46::GL_COMPILE_STATUS, &mut compiled);
+
+                                    if compiled == 0 {
+                                        panic!("Failed to compile the shader for rendering!!!");
+                                    }
+                                    
+                                    converted_stages.push(shader_id);
+                                }
+                            }
+                        },
+                        ShaderLang::Hlsl => {
+                            // get the shaders in the file and the shader function names
+                            let shader_entries = shader_stage.shader_data.get_hlsl_shaders();
+
+                            let mut shader_ids: Vec<u32> = vec![];
+                            
+                            for (shader_entry, shader_type) in &shader_entries {
+                                let shader_id = driver.gl.as_ref().unwrap().CreateShader(match shader_type {
+                                    ShaderType::Compute => gl46::GL_COMPUTE_SHADER,
+                                    ShaderType::Fragment => gl46::GL_FRAGMENT_SHADER,
+                                    ShaderType::Vertex => gl46::GL_VERTEX_SHADER,
+                                    ShaderType::Infer => panic!("No shader type has been defined!!!!"),
+                                });
+                                
+                                shader_ids.push(shader_id);
+                            }
+                            if shader_stage.shader_data.compiled_data.is_none() {
+                                panic!("Shader was not compiled!!!");
+                            }
+                            let p_binary = shader_stage.shader_data.compiled_data.expect("Failed to compile Shader!!!").clone();
+                            let c_binary = p_binary.lock();
+                            let binary = c_binary.clone();
+                            drop(c_binary);
+                            let length = binary.len().clone() as i32;
+                            driver.gl.as_ref().unwrap().ShaderBinary(shader_ids.len() as i32, shader_ids.as_ptr(), gl46::GL_SHADER_BINARY_FORMAT_SPIR_V, binary.as_ptr() as *const std::os::raw::c_void, length);
+
+                            for i in 0..shader_ids.len() {
+                                let shader_id = shader_ids[i];
+                                let shader_entry = &shader_entries[i].0;
+                                driver.gl.as_ref().unwrap().SpecializeShader(shader_id, shader_entry.as_ptr(), 0, std::ptr::null(), std::ptr::null());
+                                
+                                let mut compiled = 0;
+
+                                driver.gl.as_ref().unwrap().GetShaderiv(shader_id, gl46::GL_COMPILE_STATUS, &mut compiled);
+
+                                if compiled == 0 {
+                                    panic!("Failed to compile the shader!!!");
+                                }
+                            }
+                            
+                            converted_stages.append(&mut shader_ids);
+                        },
+                        ShaderLang::Pssl => {
+                            unimplemented!("Todo!");
+                        },
+                        ShaderLang::GodotShader => {
+                            unimplemented!("Todo!");
+                        },
+                    }
+                }
+            }
+
+            let gl = driver.gl.as_ref().unwrap();
+            let program_id = gl.CreateProgram();
+            for stage in &converted_stages {
+                gl.AttachShader(program_id, *stage);
+            }
+        
+            // lets add this to the system
+            unsafe{
+                let p_rend = Env::get_render_sys();
+                let mut rend = p_rend.write();
+                self.shaders.insert(shader.asset_path.clone(), (program_id, converted_stages.clone()));
+                drop(rend);
+            }
+        }
+    }
+
+    fn register_shader_program_vk(&mut self, shader: Shader) {
+
+    }
+    pub fn send_shader_input(&mut self, shader: Shader, data: Vec<Data>) {
+        let p_shader_ins = self.shader_input.clone();
+        let mut shader_input = p_shader_ins.lock();
+        shader_input.push((shader.clone(), data))
     }
 }
 
@@ -154,7 +357,6 @@ impl Image {
 pub struct RenderPipelineSystem {
     pub pipelines: Vec<Arc<Mutex<Pipeline>>>,
     counter: AtomicI32,
-    system_status: Arc<Mutex<gamesys::StatusCode>>,
     thread_count: usize,
     threads: Dict<usize, Arc<Mutex<Threader>>>,
     thread_reciever: Arc<Mutex<Vec<ThreadData>>>,
@@ -168,6 +370,7 @@ pub struct RenderPipelineSystem {
     shader_stages_data: Vec<ShaderStage>,
     registered_images: HashMap<String, Arc<Mutex<Image>>>,
     pub registered_shaders: HashMap<String, (String, Vec<u8>)>,
+    pub shader_programs:HashMap<String, (u32, Vec<u32>)>,
 
 }
 
@@ -183,48 +386,72 @@ impl RenderPipelineSystem{
         let p = Arc::new(Mutex::new(Pipeline {
             id: id.clone(),
             name: params.name.clone(),
-            data_sets: Vec::new(),
             layer: params.layer,
             driver: this.driver_vals.clone(),
             cameras: Vec::new(),
             is_init: false,
-            counter: AtomicI32::new(0)
+            counter: AtomicI32::new(0),
+            shader_output:Arc::new(Mutex::new(vec![])),
+            shaders: HashMap::new(),
+            shader_input: Arc::new(Mutex::new(vec![])),
         }));
         
         this.pipelines.push(p);
         id
     }
 
-    pub unsafe fn register_data(&mut self, layer: u32, data: Arc<Mutex<Vec<Data>>>, stages: Vec<ShaderStage>) -> i32{
-        let mut ptrs = vec![];
-        for stage in stages {
-            ptrs.push(RenderPipelineSystem::register_shader_stage(stage));
-        }
-        let id = self.counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        for p in &self.pipelines {
+    pub unsafe fn register_shader(layer: u32, shader: Shader){
+        // we are going to create a shader program out of the shader stages
+        let p_this = Env::get_render_sys();
+        let this = p_this.write();
+        let id = this.counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let pipelines = this.pipelines.clone();
+        drop(this);
+        for p in &pipelines {
             let mut pipeline = p.lock();
             if pipeline.layer == layer {
                 
-                pipeline.register_data(data.clone(), ptrs.clone(), id.clone());
+                pipeline.register_shader_program(shader.clone());
+                
             }
         }
-        id
+        
     }
 
-    pub unsafe fn get_return_datas(&mut self, layer: u32, data_ptr: i32) -> Vec<Arc<Mutex<Vec<Data>>>>
+    pub unsafe fn render_shader(layer: u32, shader:Shader, data: Vec<Data>) {
+        let p_this = Env::get_render_sys();
+        let this = p_this.write();
+        let pipelines = this.pipelines.clone();
+        drop(this);
+        for p in &pipelines {
+            let mut pipeline = p.lock();
+            if pipeline.layer == layer {
+                
+                pipeline.send_shader_input(shader.clone(), data.clone());
+                
+            }
+        }
+    }
+
+    pub unsafe fn get_return_datas(&mut self, layer: u32, shader_name: String) -> Result<Vec<Data>, ErrorKind>
     {
-        let mut output = vec![];
+        
         for p in &self.pipelines {
             let mut pipeline = p.lock();
             if pipeline.layer == layer {
-                for data in &pipeline.data_sets {
-                    if data.id == data_ptr {
-                        output.push(data.output.clone());
+                let p_shader_outs = pipeline.shader_output.clone();
+                let mut shader_output =p_shader_outs.lock();
+                let output_copy = shader_output.clone();
+                drop(shader_output);
+                for datas in output_copy {
+                    if datas.0.shader_name == shader_name {
+                        // we have our shader
+                        return Ok(datas.1.clone());
                     }
                 }
             }
         }
-        output
+        return Err(ErrorKind::NotFound);
     }
 
     pub unsafe fn register_camera(&mut self, layer: u32) -> i32 {
@@ -261,14 +488,14 @@ impl RenderPipelineSystem{
         return i;
     }
 
-    pub unsafe fn update_shader(shader_data: ShaderData, shader_ptr: usize) {
-        let mut p_rend = Env::get_render_sys();
-        let mut rend = p_rend.write();
-        let mut i = 0;
-        let mut stage = rend.shader_stages_data.get_mut(shader_ptr).expect("Shader pointer out of range!!");
-        // Looks like this may cause a memory leak - pls check!!
-        stage.shader_data = shader_data;
-    }
+    // pub unsafe fn update_shader(shader_data: ShaderData, shader_ptr: usize) {
+    //     let mut p_rend = Env::get_render_sys();
+    //     let mut rend = p_rend.write();
+    //     let mut i = 0;
+    //     let mut stage = rend.shader_stages_data.get_mut(shader_ptr).expect("Shader pointer out of range!!");
+    //     // Looks like this may cause a memory leak - pls check!!
+    //     stage.shader_data = shader_data;
+    // }
 
     pub unsafe fn get_shader_stage(stage: usize) -> ShaderStage {
         let mut p_rend = Env::get_render_sys();
@@ -342,7 +569,6 @@ impl RenderPipelineSystem{
         let pip_sys = RenderPipelineSystem {
             pipelines: Vec::new(),
             counter: AtomicI32::new(1),
-            system_status: Arc::new(Mutex::new(gamesys::StatusCode::RUNNING)),
             thread_count: 0,
             threads: Dict::<usize, Arc<Mutex<Threader>>>::new(),
             thread_reciever: Arc::new(Mutex::new(Vec::new())),
@@ -356,31 +582,30 @@ impl RenderPipelineSystem{
             shader_stages_data: vec![],
             registered_images: HashMap::<String, Arc<Mutex<Image>>>::new(),
             registered_shaders: HashMap::new(),
+            shader_programs: HashMap::new(),
         };
         return pip_sys;
     }
 
     pub fn processing<'a>(p_this: Arc<RwLock<Self>>) -> i32{
         unsafe{
-            loop {
-                let this = p_this.read();
-                let ready = this.ready.clone();
-                drop(this);
-                if ready {
-                    break;
-                }
-                std::thread::sleep(std::time::Duration::from_millis(5));
-            }
+            // loop {
+            //     let this = p_this.read();
+            //     let ready = this.ready.clone();
+            //     drop(this);
+            //     if ready {
+            //         break;
+            //     }
+            // }
             //println!("{}", p_this.is_locked());
             let this = p_this.write();
             // Initialise pipeline stuff
-            #[cfg(feature = "vulkan")]DriverValues::init_vulkan(this.driver_vals.lock().as_mut().unwrap(), &this.window, &this.video);
+            #[cfg(feature = "vulkan")]DriverValues::init_vulkan(this.driver_vals.lock().as_mut().unwrap(), &this.window.lock(), &this.video.lock());
             #[cfg(feature = "opengl")]DriverValues::init_ogl(this.driver_vals.lock().as_mut().unwrap(), &this.window.lock(), &this.video.lock());
-            #[cfg(feature = "gles")]DriverValues::init_gles(this.driver_vals.lock().as_mut().unwrap(), &this.window, &this.video);
-             // prebake step (only for when we have a better file system)
-             // Create a new thread purely for baking and wait for this to finish
-             // TODO: Implement better file system for storing shaders
+            #[cfg(feature = "gles")]DriverValues::init_gles(this.driver_vals.lock().as_mut().unwrap(), &this.window.lock(), &this.video.lock());
+            // we need to make everything wait for the initialisation before we can start doing any rendering
 
+            Env::set_status(gamesys::StatusCode::RENDER_INIT);
             
 
 
@@ -400,7 +625,6 @@ impl RenderPipelineSystem{
                 };
                 let p_recv = this.thread_reciever.clone();
                 let p_pipelines = this.pipelines.clone();
-                let system_status = this.system_status.clone();
                 let p_window = this.window.clone();
                 let p_video = this.video.clone();
                 drop(this);
@@ -415,33 +639,38 @@ impl RenderPipelineSystem{
                             ThreadData::Vec(vec) => todo!(),
                             ThreadData::Vec3(vec3) => todo!(),
                             ThreadData::Quat(quat) => todo!(),
-                            ThreadData::Status(status) => {
-                                let mut sys_status = system_status.lock();
-                                *sys_status = status;
-                            },
                             _ => {},
                         }
                     }
                     mutex.clear();
                 }
 
-                for p in p_pipelines{
-                    let pipe = p.lock();
-                    let is_init = pipe.is_init.clone();
-                    drop(pipe);
-                    if !is_init {
-                        #[cfg(feature = "vulkan")]VulkanRender::init(p.clone());
-                        #[cfg(feature = "opengl")]OGlRender::init(p.clone());
-                        #[cfg(feature = "gles")]GLESRender::init(p.clone());
-                    }
-                    
-                    #[cfg(feature = "vulkan")]VulkanRender::render(p.clone(), p_window.clone(), p_video.clone());
-                    #[cfg(feature = "opengl")]OGlRender::render(p.clone(), p_window.clone(), p_video.clone());
-                    #[cfg(feature = "gles")]GLESRender::render(p.clone(), p_window.clone(), p_video.clone());
+            for p in p_pipelines{
+                let pipe = p.lock();
+                let is_init = pipe.is_init.clone();
+                drop(pipe);
+                if !is_init {
+                    #[cfg(feature = "vulkan")]VulkanRender::init(p.clone());
+                    #[cfg(feature = "opengl")]OGlRender::init(p.clone());
+                    #[cfg(feature = "gles")]GLESRender::init(p.clone());
                 }
+                
+                #[cfg(feature = "vulkan")]VulkanRender::render(p.clone(), p_window.clone(), p_video.clone());
+                #[cfg(feature = "opengl")]OGlRender::render(p.clone(), p_window.clone(), p_video.clone());
+                #[cfg(feature = "gles")]GLESRender::render(p.clone(), p_window.clone(), p_video.clone());
+            }
                 
                 // std::thread::sleep(std::time::Duration::from_millis(5));
                 
+            }
+            let this = p_this.read();
+            let p_pipelines = this.pipelines.clone();
+            drop(this);
+            for p in p_pipelines{
+                    
+                #[cfg(feature = "vulkan")]VulkanRender::cleanup(p.clone());
+                #[cfg(feature = "opengl")]OGlRender::cleanup(p.clone());
+                #[cfg(feature = "gles")]GLESRender::cleanup(p.clone());
             }
             //println!("Closing thread!!");
             std::thread::sleep(std::time::Duration::from_millis(100));
@@ -455,28 +684,6 @@ impl RenderPipelineSystem{
         this.ready = true;
         drop(this);
         //println!("{}", p_this.is_locked());
-    }
-
-    pub fn is_alive(this: &mut Self) -> bool {
-        let p_sys_status = this.system_status.clone();
-        let sys_status = p_sys_status.lock();
-        *sys_status != StatusCode::CLOSE
-    }
-
-    pub fn send_status(p_this: Arc<RwLock<Self>>, status: StatusCode) {
-        loop {
-            let this = match p_this.try_read_for(std::time::Duration::from_millis(1)){
-                Some(v) => v,
-                None => {
-                    std::thread::sleep(std::time::Duration::from_millis(5));
-                    continue;
-                }
-            };
-            let p_stat = this.system_status.clone();
-            let mut stat = p_stat.lock();
-            stat = stat;
-            break;
-        }
     }
 
     pub fn init<'a>(this: Arc<RwLock<Self>>){

@@ -17,6 +17,7 @@ use engine::asset_mgr::{self, AssetManager};
 use parking_lot::*;
 use futures::join;
 use sdl2::*;
+use bitmask_enum::bitmask;
 
 use once_cell::sync::Lazy;
 use crate::black_ice::common::engine::{pipeline::*, input, event_system};
@@ -180,9 +181,16 @@ trait Initialiser {
 
 #[derive(PartialEq, Clone)]
 pub enum StatusCode{
+    ENTRY,
+    RENDER_INIT,
+    ENTITY_INIT,
+    INIT_MAP_SETUP,
+    FINISH_MAP_SETUP,
+    GAMEPLAY_START,
     RUNNING,
+    RENDER_FINISHED,
+    ENTITY_FINISHED,
     CLOSE,
-    INITIALIZE,
 }
 
 #[derive(Clone)]
@@ -303,12 +311,12 @@ impl Env {
         let x = 800;
         let y = 600;
         #[cfg(feature = "vulkan")]
-        let window = video.window("Game Window", x, y)
+        let window = Arc::new(Mutex::new(video.lock().window("Game Window", x, y)
             .position_centered()
             .vulkan()
             .resizable()
             .build()
-            .expect("Failed to build window!")
+            .expect("Failed to build window!")))
         ;
 
         #[cfg(feature = "opengl")]
@@ -351,7 +359,7 @@ impl Env {
             INPUT_SYS: input_sys,
             EVENT_SYS: event_system,
             ASSET_MGR: asset_mg,
-            STATUS: Arc::new(Mutex::new(StatusCode::INITIALIZE)),
+            STATUS: Arc::new(Mutex::new(StatusCode::ENTRY)),
             window_x: x,
             window_y: y,
             sdl_values: sdl_values,
@@ -386,6 +394,16 @@ impl Env {
             let p_event_sys_2 = env.EVENT_SYS.clone();
             drop(env);
             drop(p_env);
+            // we need to wait for everything to finish initialising before we do any of this
+            'run: loop {
+                if Env::get_status() == StatusCode::ENTITY_INIT {
+                    unsafe {
+                        Env::set_status(StatusCode::GAMEPLAY_START);
+                    }
+                    break 'run;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
             let mut ent_sys_2 = p_ent_sys_2.lock();
             let mut entity_params = components::entity::entity_system::EntityParams {
                 position: vertex::Vec3::new(0, 0, 0),
@@ -475,11 +493,6 @@ impl Env {
             let mut env = p_env.lock();
             *env.STATUS.lock() = status.clone();
             drop(env);
-            let p_rend = Env::get_render_sys().clone();
-            let p_ent = Env::get_entity_sys().clone();
-
-            RenderPipelineSystem::send_status(p_rend, status.clone());
-            EntitySystem::send_status(p_ent, status.clone());
 
             //rend.send_status(status.clone());
             //drop(rend);
@@ -487,6 +500,16 @@ impl Env {
             //drop(ent);
             return;
         
+    }
+
+    pub fn get_status() -> StatusCode {
+        unsafe{
+            let mut p_env = Env::get_env();
+            let mut env = p_env.lock();
+            let p_status = env.STATUS.clone();
+            let status = p_status.lock();
+            status.clone()
+        }
     }
 
     pub unsafe fn cursor_is_hidden() -> bool 
@@ -543,6 +566,12 @@ impl Env {
         (env.window_x.clone(), env.window_y.clone())
     }
 
+    pub fn get_game_name() -> String {
+        let p_env = Env::get_env();
+        let mut env = p_env.lock();
+        let name = env.gameName.lock();
+        name.clone()
+    }
 }
 
 pub static mut ENV: Lazy<Option<Arc<Mutex<Env>>>> = Lazy::new( || {None});

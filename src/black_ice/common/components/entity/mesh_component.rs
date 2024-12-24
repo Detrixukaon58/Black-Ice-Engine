@@ -1,21 +1,22 @@
 #![allow(unused)]
 #![allow(non_snake_case)]
 
-use std::any::Any;
+use std::{any::Any, collections::HashMap};
 use std::sync::Arc;
 use parking_lot::*;
 
-use crate::black_ice::common::{mesh::*, engine::gamesys::*, vertex::*, angles::*, components::{component_system::*, entity::entity_system::{entity_event::*, *}}, transform::Transform, matrices::*};
+use crate::black_ice::common::{angles::*, components::{component_system::*, entity::entity_system::{entity_event::*, *}}, engine::{asset_types::{materials, shader_asset::Shader}, gamesys::*}, matrices::*, mesh::*, transform::Transform, vertex::*};
 use crate::black_ice::common::engine::pipeline::*;
 use colored::*;
 // This is a type of pointer that is assigned by the game engine. This means that it must be of trait Reflection
 
 pub struct MeshComponent {
     mesh: Arc<Mutex<Mesh>>,
-    mesh_id: i32,
+    surface_ids: HashMap<u32, i32>,
     layer: u32,
     transform: Transform,
     pub p_entity: EntityPtr,
+
 }
 
 impl Base for MeshComponent{}
@@ -71,7 +72,7 @@ impl Constructor<MeshComponent> for MeshComponent {
         let layer = definition.get("layer").expect("Failed to get layer!!").as_u32().unwrap();
         Some(ComponentRef_new(MeshComponent {
             mesh: mesh.clone(), 
-            mesh_id: -1,
+            surface_ids: HashMap::new(),
             layer: layer,
             transform: Transform::new(definition["position"].as_vec3()?, definition["rotation"].as_quat()?, definition["scale"].as_vec3()?),
             p_entity: entity.clone(),
@@ -97,20 +98,40 @@ impl Constructor<MeshComponent> for MeshComponent {
 
 impl MeshComponent {
 
-    pub fn init_mesh(&self) {
+    pub fn init_mesh(&mut self) {
         unsafe{
-            let p_rend_sys = Env::get_render_sys();
-            
-            let mut rend_sys = p_rend_sys.write();
             //println!("{}", "Adding Mesh".red());
+            // lets add all the mesh and shader data
+            let p_mesh = self.mesh.clone();
+            let mesh = p_mesh.lock();
+
+            for (id, p_material) in &mesh.materials {
+                let material = p_material.lock();
+                let shader = material.shader.clone();
+                
+                RenderPipelineSystem::register_shader(self.layer, shader);
+            }
             
             //println!("{}", "Added Mesh".blue());
         }
     }
-    pub fn update_mesh(&self) {
+    pub fn update_mesh(&mut self) {
         let mut mesh = self.mesh.lock();
         mesh.transform = self.p_entity.get_world_tm() * self.transform.get_world_tm();
+        // update mesh for the render pipelines
+        unsafe{
 
+            for (id, p_material) in &mesh.materials {
+                let material = p_material.lock();
+                let shader = material.shader.clone();
+                let surface = mesh.surfaces.iter().find(|p_x| { let x = p_x.lock(); x.id==*id}).unwrap().clone();
+                let data = vec![Data::Surface(surface)];
+
+                RenderPipelineSystem::register_shader(self.layer, shader.clone());
+                RenderPipelineSystem::render_shader(self.layer, shader, data);
+            }
+            
+        }
     }
 
     pub fn triangle(&mut self) {

@@ -2,18 +2,19 @@
 #![allow(unused)]
 
 use core::panic;
-use std::{collections::HashMap, f32::consts::PI, fs::File, mem::{size_of_val, size_of}, os::raw::c_void, sync::Arc};
+use std::{collections::HashMap, f32::consts::PI, ffi::CStr, fs::File, mem::{size_of, size_of_val}, os::raw::c_void, sync::Arc};
 
 
 use colored::Colorize;
 use engine::asset_types::shader_asset::ShaderLang;
 use gl46::*;
+use image::EncodableLayout;
 use sdl2::{video::GLContext, surface};
 use crate::black_ice::common::{angles::{QuatConstructor, Quat}, engine::pipeline::RenderPipelineSystem, matrices::*, mesh::Mesh, vertex::*, *};
 use parking_lot::*;
 use self::engine::asset_types::{shader_asset::ShaderType, materials::*};
 
-use super::pipeline::{Pipeline, Camera, DataSet, Data};
+use super::pipeline::{Pipeline, Camera, Data};
 
 pub struct SdlGlContext(GLContext);
 
@@ -64,6 +65,7 @@ pub struct RenderTexture {
 pub trait OGlRender {
     fn init(th: Arc<Mutex<Self>>) -> i32;
     fn render(th: Arc<Mutex<Self>>, p_window: Arc<Mutex<sdl2::video::Window>>, p_video: Arc<Mutex<sdl2::VideoSubsystem>>) -> i32;
+    fn cleanup(th:Arc<Mutex<Self>>);
 }
 
 impl OGlRender for Pipeline {
@@ -89,8 +91,11 @@ impl OGlRender for Pipeline {
             
             let mut pipeline = th.lock();
             let cameras = pipeline.cameras.clone();
-            let mut p_driver = pipeline.driver.lock();
-            let mut driver = p_driver.as_mut().unwrap();
+            let mut p_driver = pipeline.driver.clone();
+            let mut d = p_driver.lock();
+            let mut driver = d.as_mut().unwrap();
+            let p_shader_input = pipeline.shader_input.clone();
+            drop(pipeline);
             for p_camera in &cameras{
     
                 driver.gl.as_ref().unwrap().Clear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -105,6 +110,10 @@ impl OGlRender for Pipeline {
                     let (window_x, window_y) = Env::get_window_size();
                     driver.gl.as_ref().unwrap().Viewport(0, 0, window_x as i32, window_y as i32);
                 }
+
+                let camera_projection = camera.projection;
+                let camera_transform = camera.transform;
+                drop(camera);
                 // println!("{}", pipeline.meshs.len());
                 
             
@@ -126,7 +135,7 @@ impl OGlRender for Pipeline {
                         I16Sequence(String, u32),
                         DoubleSequence(String, u32),
                         ImageSequence(String, u32),
-                        Mesh((u32, u32, u32)),
+                        Surface((u32, u32, u32), u32),
                         Float(String, u32),
                         Integer(String, u32),
                         I16(String, u32),
@@ -137,12 +146,27 @@ impl OGlRender for Pipeline {
                         IVector(String, u32),
                         DVectorBuffer(String, u32),
                         DVector(String, u32),
+                        MeshMatrix(String, u32),
+                        Matrix(String, u32)
                     }
+                    let mut shader_input = p_shader_input.lock();
+                    let mut shader_input_clone = shader_input.clone();
+                    drop(shader_input);
+                    for data in shader_input_clone{
+                        // Now get shaders and produce a shader program
+                        let mut converted_stages: Vec<u32> = vec![];
+                        let p_pipe = th.clone();
+                        let pipe = p_pipe.lock();
+                        let mut shader_program: Option<u32> = None;
+                        if let Some((prog, v)) = pipe.shaders.get(&data.0.asset_path) {
+                            shader_program = Some(prog.clone());
+                        }
+                        drop(pipe);
 
-                    for data in &pipeline.data_sets {
+                        
+                        
                         // register each data
-                        let mut input_ptr = data.input_data.clone();
-                        let mut input_data = input_ptr.lock();
+                        let mut input_data = data.1.clone();
                         let mut input_uint: Vec<ConvertedData> = vec![];
                         for d in input_data.as_slice() {
                             let mut mesh_buffer: Option<(u32, u32, u32)> = None;
@@ -162,62 +186,61 @@ impl OGlRender for Pipeline {
 
                                 },
                                 Data::ImageSequence(name, img) => {
-
+                                    
                                 },
-                                Data::Mesh(p_mesh) => {
+                                Data::Surface(p_surface) => {
                                     //sort out like regular mesh
-                                    let mut mesh = p_mesh.lock();
-                                    for p_surface in &mesh.surfaces {
-                                        let mut surface = p_surface.lock();
-                                        
-                                        if !surface.indices.is_empty() && !surface.normals.is_empty() && !surface.texture_coord.is_empty(){
-                                            // convert faces to indices
-                                            let indices = {
-                                                let mut temp = vec![];
-                                                for index in &surface.indices {
-                                                    temp.push(index.clone() as u32);
-                                                }
-                                                temp
-                                            };
 
-                                            let vertices = {
-                                                let mut temp = vec![];
-                                                for i in 0..surface.verts.len() {
-                                                    let vert = surface.verts[i];
-                                                    let normal:Vec3 = {
-                                                        let mut temp_n = Vec3::default();
-                                                        for normal in &surface.normals {
-                                                            if normal.0 == i as i16 {
-                                                                temp_n = normal.1.clone();
-                                                            }
-                                                        }
-                                                       temp_n
-                                                    };
-                                                    let tex_coord = {
-                                                        let mut temp = (0.0, 0.0);
-                                                        for tex in &surface.texture_coord {
-                                                            if tex.0 == i as i16 {
-                                                                temp = tex.1.clone();
-                                                            }
-                                                        }
-                                                        temp
-                                                    };
-                                                    temp.push(vert.x);
-                                                    temp.push(vert.y);
-                                                    temp.push(vert.z);
-                                                    temp.push(normal.x);
-                                                    temp.push(normal.y);
-                                                    temp.push(normal.z);
-                                                    temp.push(tex_coord.0);
-                                                    temp.push(tex_coord.1);
-                                                }
-                                                temp
-                                            };
-                                            input_uint.push(ConvertedData::Mesh(DriverValues::create_buffer_vec_norm_tex(driver, vertices.as_slice(), indices.as_slice())));
+                                    let mut surface = p_surface.lock();
+                                    
+                                    if !surface.indices.is_empty() && !surface.normals.is_empty() && !surface.texture_coord.is_empty(){
+                                        // convert faces to indices
+                                        let indices = {
+                                            let mut temp = vec![];
+                                            for index in &surface.indices {
+                                                temp.push(index.clone() as u32);
+                                            }
+                                            temp
+                                        };
 
-                                        }
+                                        let vertices = {
+                                            let mut temp = vec![];
+                                            for i in 0..surface.verts.len() {
+                                                let vert = surface.verts[i];
+                                                let normal:Vec3 = {
+                                                    let mut temp_n = Vec3::default();
+                                                    for normal in &surface.normals {
+                                                        if normal.0 == i as i16 {
+                                                            temp_n = normal.1.clone();
+                                                        }
+                                                    }
+                                                    temp_n
+                                                };
+                                                let tex_coord = {
+                                                    let mut temp = (0.0, 0.0);
+                                                    for tex in &surface.texture_coord {
+                                                        if tex.0 == i as i16 {
+                                                            temp = tex.1.clone();
+                                                        }
+                                                    }
+                                                    temp
+                                                };
+                                                temp.push(vert.x);
+                                                temp.push(vert.y);
+                                                temp.push(vert.z);
+                                                temp.push(normal.x);
+                                                temp.push(normal.y);
+                                                temp.push(normal.z);
+                                                temp.push(tex_coord.0);
+                                                temp.push(tex_coord.1);
+                                            }
+                                            temp
+                                        };
+                                        input_uint.push(ConvertedData::Surface(DriverValues::create_buffer_vec_norm_tex(driver, vertices.as_slice(), indices.as_slice()), surface.indices.len() as u32));
 
                                     }
+
+                                
                                 },
                                 Data::Float(name, f) => {
 
@@ -249,157 +272,108 @@ impl OGlRender for Pipeline {
                                 Data::DVector(name, v) => {
 
                                 },
+                                Data::MeshMatrix(name, mat) => {
+                                    let location = driver.gl.as_ref().unwrap().GetUniformLocation(shader_program.unwrap(), name.as_ptr());
+                                    assert_ne!(location, -1);
+                                    driver.gl.as_ref().unwrap().UniformMatrix4fv(location, 1, GL_FALSE.0 as u8, mat.to_buffer44().as_mut_ptr());
+                                    let _mvp = camera_projection * camera_transform * *mat;
+                                    let _mvp_location = driver.gl.as_ref().unwrap().GetUniformLocation(shader_program.unwrap(), "_mvp".as_ptr());
+                                    assert_ne!(_mvp_location, -1);
+                                    driver.gl.as_ref().unwrap().UniformMatrix4fv(_mvp_location, 1, GL_FALSE.0 as u8, _mvp.to_buffer().as_mut_ptr());
+                                },
+                                Data::Matrix(name, mat) => {
+                                    let location = driver.gl.as_ref().unwrap().GetUniformLocation(shader_program.unwrap(), name.as_ptr());
+                                    assert_ne!(location, -1);
+                                    driver.gl.as_ref().unwrap().UniformMatrix4fv(location, 1, GL_FALSE.0 as u8, mat.to_buffer44().as_mut_ptr());
+                                }
                             }
                         }
+                        let gl = driver.gl.as_ref().unwrap();
+                        // lets add the view and projection matrices
+                        let _p_location = gl.GetUniformLocation(shader_program.unwrap(), "_p".as_ptr());
+                        if _p_location != -1 {
+                            // we have a pprojection matrix to add!!
+                            gl.UniformMatrix4fv(_p_location, 1, GL_FALSE.0 as u8, camera_projection.to_buffer().as_mut_ptr());
+                        }
+                        let _v_location = gl.GetUniformLocation(shader_program.unwrap(), "_v".as_ptr());
+                        if _v_location != -1 {
+                            gl.UniformMatrix4fv(_v_location, 1, GL_FALSE.0 as u8, camera_transform.to_buffer44().as_mut_ptr());
+                        }
 
-                        // Now get shaders and produce a shader program
-                        let mut converted_stages: Vec<u32> = vec![];
-                        for stage in &data.shader_stages {
-                            let mut shader_stage = RenderPipelineSystem::get_shader_stage(*stage);
-                            match shader_stage.shader_lang {
-                                ShaderLang::Glsl => {
-                                    match shader_stage.shader_type {
-                                        ShaderType::Compute => {
-                                            let shader_id = driver.gl.as_ref().unwrap().CreateShader(GL_COMPUTE_SHADER);
-
-                                            // Using SPIR-V 
-                                            // Always enter from "main"
-                                            if shader_stage.shader_data.compiled_data.is_none() {
-                                                panic!("Shader was not compiled!!!");
-                                            }
-                                            let binary = shader_stage.shader_data.compiled_data.expect("Failed to compile Shader!!!").clone();
-                                            let length = binary.lock().len().clone() as i32;
-                                            driver.gl.as_ref().unwrap().ShaderBinary(1, &shader_id, GL_SHADER_BINARY_FORMAT_SPIR_V, binary.data_ptr().cast_const() as *const c_void, length);
-                                            driver.gl.as_ref().unwrap().SpecializeShader(shader_id, b"main".as_ptr(), 0, std::ptr::null(), std::ptr::null());
-                                            
-                                            let mut compiled = 0;
-                                            driver.gl.as_ref().unwrap().GetShaderiv(shader_id, GL_COMPILE_STATUS, &mut compiled);
-
-                                            if compiled == 0 {
-                                                panic!("Failed to compile the shader for rendering!!!");
-                                            }
-                                        },
-                                        ShaderType::Fragment => {
-                                            let shader_id = driver.gl.as_ref().unwrap().CreateShader(GL_FRAGMENT_SHADER);
-                                            // Using SPIR-V 
-                                            // Always enter from "main"
-                                            if shader_stage.shader_data.compiled_data.is_none() {
-                                                panic!("Shader was not compiled!!!");
-                                            }
-                                            let binary = shader_stage.shader_data.compiled_data.expect("Failed to compile Shader!!!").clone();
-                                            let length = binary.lock().len().clone() as i32;
-                                            driver.gl.as_ref().unwrap().ShaderBinary(1, &shader_id, GL_SHADER_BINARY_FORMAT_SPIR_V, binary.data_ptr().cast_const() as *const c_void, length);
-                                            driver.gl.as_ref().unwrap().SpecializeShader(shader_id, b"main".as_ptr(), 0, std::ptr::null(), std::ptr::null());
-
-                                            let mut compiled = 0;
-                                            driver.gl.as_ref().unwrap().GetShaderiv(shader_id, GL_COMPILE_STATUS, &mut compiled);
-
-                                            if compiled == 0 {
-                                                panic!("Failed to compile the shader for rendering!!!");
-                                            }
-
-                                            converted_stages.push(shader_id);
-
-                                        },
-                                        ShaderType::Vertex => {
-                                            let mut shader_id = driver.gl.as_ref().unwrap().CreateShader(GL_VERTEX_SHADER);
-                                            // Using SPIR-V 
-                                            // Always enter from "main"
-                                            if shader_stage.shader_data.compiled_data.is_none() {
-                                                panic!("Shader was not compiled!!!");
-                                            }
-                                            let binary = shader_stage.shader_data.compiled_data.expect("Failed to compile Shader!!!").clone();
-                                            let length = binary.lock().len().clone() as i32;
-                                            driver.gl.as_ref().unwrap().ShaderBinary(1, &shader_id, GL_SHADER_BINARY_FORMAT_SPIR_V, binary.data_ptr().cast_const() as *const c_void, length);
-                                            driver.gl.as_ref().unwrap().SpecializeShader(shader_id, b"main".as_ptr(), 0, std::ptr::null(), std::ptr::null());
-
-                                            let mut compiled = 0;
-                                            driver.gl.as_ref().unwrap().GetShaderiv(shader_id, GL_COMPILE_STATUS, &mut compiled);
-
-                                            if compiled == 0 {
-                                                panic!("Failed to compile the shader for rendering!!!");
-                                            }
-
-                                            converted_stages.push(shader_id);
-
-                                        },
-                                        ShaderType::Infer => {
-                                            let shader_type_infered = shader_stage.shader_data.infer_shader_type();
-                                            let shader_type = match shader_type_infered {
-                                                ShaderType::Compute => (GL_COMPUTE_SHADER),
-                                                ShaderType::Fragment => (GL_FRAGMENT_SHADER),
-                                                ShaderType::Vertex => (GL_VERTEX_SHADER),
-                                                _ => panic!("No shader type defined in file. Please add #pragma shader_type(shader type) to your file!!")
-                                            };
-                                            let mut shader_id = driver.gl.as_ref().unwrap().CreateShader(shader_type);
-                                            // Using SPIR-V 
-                                            // Always enter from "main"
-                                            if shader_stage.shader_data.compiled_data.is_none() {
-                                                panic!("Shader was not compiled!!!");
-                                            }
-                                            let binary = shader_stage.shader_data.compiled_data.expect("Failed to compile Shader!!!").clone();
-                                            let length = binary.lock().len().clone() as i32;
-                                            driver.gl.as_ref().unwrap().ShaderBinary(1, &shader_id, GL_SHADER_BINARY_FORMAT_SPIR_V, binary.data_ptr().cast_const() as *const c_void, length);
-                                            driver.gl.as_ref().unwrap().SpecializeShader(shader_id, b"main".as_ptr(), 0, std::ptr::null(), std::ptr::null());
-
-                                            let mut compiled = 0;
-                                            driver.gl.as_ref().unwrap().GetShaderiv(shader_id, GL_COMPILE_STATUS, &mut compiled);
-
-                                            if compiled == 0 {
-                                                panic!("Failed to compile the shader for rendering!!!");
-                                            }
-
-                                            converted_stages.push(shader_id);
-                                        }
-                                    }
-                                },
-                                ShaderLang::Hlsl => {
-                                    // get the shaders in the file and the shader function names
-                                    let shader_entries = shader_stage.shader_data.get_hlsl_shaders();
-
-                                    let mut shader_ids: Vec<u32> = vec![];
+                        gl.UseProgram(shader_program.unwrap());
+                        // now we expose the data to the shader program!!
+                        for input in &input_uint {
+                            match input {
+                                ConvertedData::FloatSequence(_, _) => todo!(),
+                                ConvertedData::IntegerSequence(_, _) => todo!(),
+                                ConvertedData::I16Sequence(_, _) => todo!(),
+                                ConvertedData::DoubleSequence(_, _) => todo!(),
+                                ConvertedData::ImageSequence(_, _) => todo!(),
+                                ConvertedData::Surface((vao,vbo,ebo),count) => {
                                     
-                                    for (shader_entry, shader_type) in &shader_entries {
-                                        let shader_id = driver.gl.as_ref().unwrap().CreateShader(match shader_type {
-                                            ShaderType::Compute => GL_COMPUTE_SHADER,
-                                            ShaderType::Fragment => GL_FRAGMENT_SHADER,
-                                            ShaderType::Vertex => GL_VERTEX_SHADER,
-                                            ShaderType::Infer => panic!("No shader type has been defined!!!!"),
-                                        });
-                                        
-                                        shader_ids.push(shader_id);
-                                    }
-                                    if shader_stage.shader_data.compiled_data.is_none() {
-                                        panic!("Shader was not compiled!!!");
-                                    }
-                                    let binary = shader_stage.shader_data.compiled_data.expect("Failed to compile Shader!!!").clone();
-                                    let length = binary.lock().len().clone() as i32;
-                                    driver.gl.as_ref().unwrap().ShaderBinary(shader_ids.len() as i32, shader_ids.as_ptr(), GL_SHADER_BINARY_FORMAT_SPIR_V, binary.data_ptr().cast_const() as *const std::os::raw::c_void, length);
-
-                                    for i in 0..shader_ids.len() {
-                                        let shader_id = shader_ids[i];
-                                        let shader_entry = &shader_entries[i].0;
-                                        driver.gl.as_ref().unwrap().SpecializeShader(shader_id, shader_entry.as_ptr(), 0, std::ptr::null(), std::ptr::null());
-
-                                        let mut compiled = 0;
-
-                                        driver.gl.as_ref().unwrap().GetShaderiv(shader_id, GL_COMPILE_STATUS, &mut compiled);
-
-                                        if compiled == 0 {
-                                            panic!("Failed to compile the shader!!!");
-                                        }
-                                    }
-                                    converted_stages.append(&mut shader_ids);
+                                    gl.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, *ebo);
+                                    gl.DrawElements(GL_TRIANGLES, *count as i32, GL_UNSIGNED_INT, 0 as *const _);
                                 },
-                                ShaderLang::Pssl => {
-                                    unimplemented!("Todo!");
+                                ConvertedData::Float(_, _) => todo!(),
+                                ConvertedData::Integer(_, _) => todo!(),
+                                ConvertedData::I16(_, _) => todo!(),
+                                ConvertedData::Double(_, _) => todo!(),
+                                ConvertedData::VectorBuffer(_, _) => todo!(),
+                                ConvertedData::Vector(_, _) => todo!(),
+                                ConvertedData::IVectorBuffer(_, _) => todo!(),
+                                ConvertedData::IVector(_, _) => todo!(),
+                                ConvertedData::DVectorBuffer(_, _) => todo!(),
+                                ConvertedData::DVector(_, _) => todo!(),
+                                ConvertedData::Matrix(name, u) => {
+
                                 },
-                                ShaderLang::GodotShader => {
-                                    unimplemented!("Todo!");
-                                },
+                                ConvertedData::MeshMatrix(name, u) => {
+
+                                }
                             }
                         }
+
+                        
+                        
+                        for input in &input_uint {
+                            match input {
+                                ConvertedData::FloatSequence(_, _) => todo!(),
+                                ConvertedData::IntegerSequence(_, _) => todo!(),
+                                ConvertedData::I16Sequence(_, _) => todo!(),
+                                ConvertedData::DoubleSequence(_, _) => todo!(),
+                                ConvertedData::ImageSequence(_, _) => todo!(),
+                                ConvertedData::Surface((vao,vbo,ebo),count) => {
+                                    
+                                    gl.DeleteVertexArrays(1, [*vao].as_ptr());
+                                    gl.DeleteBuffers(2, [*vbo,*ebo].as_ptr());
+                                },
+                                ConvertedData::Float(_, _) => todo!(),
+                                ConvertedData::Integer(_, _) => todo!(),
+                                ConvertedData::I16(_, _) => todo!(),
+                                ConvertedData::Double(_, _) => todo!(),
+                                ConvertedData::VectorBuffer(_, _) => todo!(),
+                                ConvertedData::Vector(_, _) => todo!(),
+                                ConvertedData::IVectorBuffer(_, _) => todo!(),
+                                ConvertedData::IVector(_, _) => todo!(),
+                                ConvertedData::DVectorBuffer(_, _) => todo!(),
+                                ConvertedData::DVector(_, _) => todo!(),
+                                ConvertedData::Matrix(name, u) => {
+                                    
+                                },
+                                ConvertedData::MeshMatrix(name, u) => {
+                                    
+                                }
+                            }
+                        }
+                        // we also need to send the output data to the shader_output!!
+                        // TODO!!
+
+                        
                     }
+                    let mut shader_input = p_shader_input.lock();
+                    shader_input.clear();
+                    drop(shader_input);
+
                     let gl = driver.gl.as_ref().unwrap();
                     gl.Enable(GL_DEPTH_TEST);
                     
@@ -411,6 +385,10 @@ impl OGlRender for Pipeline {
             }
         }
         0
+    }
+
+    fn cleanup(th:Arc<Mutex<Self>>) {
+        
     }
 }
 
@@ -435,8 +413,21 @@ impl DriverValues {
         let gl = this.gl.as_ref().unwrap();
         gl.ClearColor(0.2, 0.3, 0.3, 1.0);
         
-        
+        // get all extentions and print them
+        let mut extentions: Vec<String> = vec![];
+        let mut extention_count: i32 = 0;
+        gl.GetIntegerv(GL_NUM_EXTENSIONS, &mut extention_count);
 
+        for i in 0..extention_count {
+            let st = gl.GetStringi(GL_EXTENSIONS, i as u32);
+            let c_str = CStr::from_ptr(st as *const i8);
+            let value = String::from(c_str.to_str().unwrap());
+
+            print!("{}\n", value);
+            extentions.push(value);
+                
+
+        }
 
         video.gl_set_swap_interval(sdl2::video::SwapInterval::VSync).expect("Failed to set swap interval!!");
     }
@@ -468,12 +459,6 @@ impl DriverValues {
         PipelineValues {  }
     }
 
-    pub unsafe fn process_data(this: &mut Self, data: &DataSet) {
-        let mut input_ptr = data.input_data.clone();
-        let mut output_ptr = data.output.clone();
-        // process with shader
-        
-    }
 
     // pub unsafe fn create_shader(this: &mut Self, stage: &ShaderStage) -> (String, u32) {
     //     for s in &this.shader_stages {

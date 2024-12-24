@@ -65,10 +65,19 @@ impl EventSystem {
                     event::Event::Window { timestamp, window_id, win_event } => {
                         match win_event {
                             event::WindowEvent::Resized(x, y) => {
-                                
+                                let p_env = Env::get_env();
+                                let mut env = p_env.lock();
+                                env.window_x = x.try_into().unwrap();
+                                env.window_y = y.try_into().unwrap();
                             }
                             _ => {}
                         }
+                    },
+                    event::Event::MouseMotion { timestamp, window_id, which, mousestate, x, y, xrel, yrel } => {
+                        let p_input_sys = Env::get_input_sys();
+                        let mut input_sys = p_input_sys.lock();
+                        input_sys.cursor_x.push(x as f32);
+                        input_sys.cursor_y.push(y as f32);
                     }
                     _ => continue
                 }

@@ -59,6 +59,7 @@ impl BaseComponent for CameraComponent {
                     ));
                     
                 }
+                //println!("{}. {}", cursor_x.average(),cursor_y.average());
                 //println!("{:?}, {:?}", self.test.y, self.test.p);
                 //println!("Frame Time: {}", frame_time);
                 self.look_at(

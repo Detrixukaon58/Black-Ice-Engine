@@ -1,6 +1,9 @@
 use std::borrow::BorrowMut;
 use std::any::Any;
+use std::collections::HashMap;
+use std::sync::atomic::AtomicU32;
 use std::sync::Arc;
+use engine::asset_mgr::AssetManager;
 use parking_lot::*;
 use crate::black_ice::common::{vertex::*, transform::*, engine::gamesys::*};
 use crate::black_ice::common::filesystem::files::*;
@@ -19,12 +22,12 @@ pub enum SurfaceType {
 }
 
 pub struct Surface {
+    pub id: u32,
     pub name: String,
     pub verts: Vec<Vec3>,
     pub indices: Vec<i16>, //made of 3 verts
     pub normals: Vec<(i16, Vec3)>,
     pub texture_coord: Vec<(i16, (f32, f32))>,
-    pub material: Box<Material>,
     pub is_concave: bool,
     pub surface_type: SurfaceType
 }
@@ -32,6 +35,8 @@ pub struct Surface {
 pub struct Mesh {
     pub surfaces: Vec<Arc<Mutex<Surface>>>,
     pub transform: matrices::Matrix34,
+    pub materials: HashMap<u32, Arc<Mutex<Material>>>,
+    counter: AtomicU32
 }
 
 impl Mesh {
@@ -51,8 +56,11 @@ impl Mesh {
         mesh_object.add_uv(0, (0.0, 0.0));
         mesh_object.add_uv(1, (0.5, 0.5));
         mesh_object.add_uv(2, (1.0, 0.0));
-
+        mesh_object.id = self.counter.fetch_add(1, std::sync::atomic::Ordering::Acquire);
+        self.materials.insert(mesh_object.id.clone(), Arc::new(Mutex::new(Material::new())));
         self.surfaces.push(Arc::new(Mutex::new(mesh_object)));
+
+        
     }
 
     pub fn square(&mut self) {
@@ -76,20 +84,23 @@ impl Mesh {
         mesh_object.add_uv(1, (1.0, 0.0));
         mesh_object.add_uv(2, (1.0, 1.0));
         mesh_object.add_uv(3, (0.0, 1.0));
-
+        mesh_object.id = self.counter.fetch_add(1, std::sync::atomic::Ordering::Acquire);
+        self.materials.insert(mesh_object.id.clone(), Arc::new(Mutex::new(Material::new())));
         self.surfaces.push(Arc::new(Mutex::new(mesh_object)));
     }
 
     pub fn new() -> Self {
-        Self { surfaces: Vec::new(), transform: matrices::Matrix34::identity()}
+        Self { surfaces: Vec::new(), transform: matrices::Matrix34::identity(), materials: HashMap::new(),counter: AtomicU32::new(0)}
     }
 }
 
 pub struct MeshFile {
+    id_counter: AtomicU32,
     surfaces: Vec<Arc<Mutex<Surface>>>,
     pub mesh_file: FileSys,
     pub mesh_file_type: MFType,
-    pub use_custom_materials: bool
+    pub use_custom_materials: bool,
+    pub materials: HashMap<u32, Arc<Mutex<Material>>>,
 }
 
 pub trait MeshInstanciate<T> {
@@ -153,12 +164,6 @@ impl Reflection for Surface{
             desc: Box::new("The normals of each face. This is ordered in the order of the faces. e.g. faces[1] has normal normals[1], faces[n] has normal normal[n]"), 
             reference: Box::new(&self.normals), 
             ref_type: self.normals.type_id()});
-        
-        register.addPointer(Pointer {
-            name: Box::new("material"), 
-            desc: Box::new("This is the material that is being used my this mesh. This is a script either provided by the engine or by the developer."), 
-            reference: self.material.register_reflect(), 
-            ref_type: self.material.type_id()});
 
         return Ptr{ b: register};
     }
@@ -180,7 +185,7 @@ impl Reflection for MeshFile {
 
 impl MeshInstanciate<MeshFile> for MeshFile {
     fn new() -> MeshFile {
-        return MeshFile {surfaces: Vec::<Arc<Mutex<Surface>>>::new(), mesh_file: FileSys::new(), mesh_file_type: MFType::UNKNOWN, use_custom_materials: false};
+        return MeshFile {id_counter: AtomicU32::new(0), surfaces: Vec::<Arc<Mutex<Surface>>>::new(), mesh_file: FileSys::new(), mesh_file_type: MFType::UNKNOWN, use_custom_materials: false, materials: HashMap::new()};
     }
 }
 
@@ -245,18 +250,20 @@ impl MeshFileSys for MeshFile {
                         obj.add_normal(i.try_into().unwrap(), normals[i]);
                         obj.add_uv(i.try_into().unwrap(), texture_coords[i]);
                     }
-
+                    let id = self.id_counter.fetch_add(0, std::sync::atomic::Ordering::Acquire);
                     self.surfaces.push(components::component_system::ComponentRef_new(
                         Surface { 
+                            id: id.clone(),
                             name: String::from(split[1]), 
                             verts: Vec::new(), 
                             indices: Vec::new(), 
                             normals: Vec::new(), 
                             texture_coord: Vec::new(), 
-                            material: Box::new(Material::new()), 
                             is_concave: false,
                             surface_type: SurfaceType::TRIANGLES
-                        }));
+                        }
+                    ));
+                    self.materials.insert(id, Arc::new(Mutex::new(Material::new())));
                     current_object += 1;
 
                 },
@@ -341,7 +348,7 @@ impl MeshFile {
     }
 
     pub fn as_mesh(&self) -> Mesh {
-        Mesh { surfaces: self.surfaces.clone(), transform: matrices::Matrix34::identity()}
+        Mesh { surfaces: self.surfaces.clone(), transform: matrices::Matrix34::identity(), materials: self.materials.clone(), counter: AtomicU32::new(0)}
     }
 }
 
@@ -393,6 +400,6 @@ impl MeshConstruct for Surface {
 
 impl Surface {
     pub fn new(name: String, surface_type: SurfaceType) -> Self {
-        Self { name: name.clone(), verts: Vec::new(), indices: Vec::new(), normals: Vec::new(), texture_coord: Vec::new(), material: Box::new(Material::new()), is_concave: false, surface_type: surface_type }
+        Self { id: 0, name: name.clone(), verts: Vec::new(), indices: Vec::new(), normals: Vec::new(), texture_coord: Vec::new(), is_concave: false, surface_type: surface_type }
     }
 }

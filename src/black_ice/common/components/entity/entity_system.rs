@@ -1,9 +1,9 @@
 // TODO: Make an entity registration system to allow for components to be registered to an entity
 #![allow(unused)]
-use std::{any::*, thread::JoinHandle, collections::*, sync::{Arc, atomic::*}, future::*, pin::*, ops::DerefMut, alloc::Layout};
+use std::{alloc::Layout, any::*, collections::*, future::*, ops::DerefMut, pin::*, sync::{atomic::*, Arc}, thread::JoinHandle, time::Duration};
 use bitmask_enum::*;
 
-use crate::black_ice::common::{engine::{gamesys::*, threading::ThreadData}, vertex::*, angles::*, components::{component_system::{*, self}, entity}, transform::{self, Transform}, matrices::Matrix34};
+use crate::black_ice::common::{angles::*, components::{component_system::{self, *}, entity}, engine::{gamesys::{self, *}, threading::ThreadData}, matrices::Matrix34, transform::{self, Transform}, vertex::*};
 use parking_lot::*;
 use colored::*;
 
@@ -120,8 +120,9 @@ impl Entity {
     }
 
     fn processing(p_this: &mut EntityPtr) -> i32 {
-        'run: loop{
+        
             let mut this = p_this.lock();
+            let id = this.entity_id.clone();
             let p_recv = this.thread_reciever.clone();
             let p_comp_sys = this.component_system.clone();
             let mut count = this.count.clone();
@@ -138,6 +139,7 @@ impl Entity {
             let time = std::time::Duration::from_millis(16).as_secs_f32() - avg.last().unwrap();
             std::thread::sleep(std::time::Duration::from_secs_f32(if time > 0.0 {time} else {0.0}));
             let frame_time = 1.0 / average;
+            //println!("Processing Entity {}, Frametime: {}", id, 1.0 / frame_time.clone());
             drop(avg);
             let mut i = 0;
             let mut event = Event::update_event();
@@ -159,7 +161,7 @@ impl Entity {
                     for p_component in  comp_sys.to_vec(){
                         drop(p_component);
                     }
-                    break 'run;
+                    return 0;
                 }
                 match data {
                     EventThreadData::Event(mut event) => {
@@ -179,7 +181,7 @@ impl Entity {
                         for p_component in  comp_sys.to_vec(){
                             drop(p_component);
                         }
-                        break 'run;
+                        return 0;
                     }
                     _ => {},
                 }
@@ -187,7 +189,7 @@ impl Entity {
             }
             
             
-        }
+        
         //println!("{}", "Killed Entity".red());
         
         0
@@ -462,7 +464,6 @@ pub mod entity_event{
 pub struct EntitySystem {
     p_entities: Arc<Mutex<Vec<EntityPtr>>>,
     entity_join_handles: Arc<Mutex<Vec<(EntityID, JoinHandle<i32>)>>>,
-    system_status: Arc<Mutex<StatusCode>>,
     thread_reciever: Arc<Mutex<Vec<ThreadData>>>,
     counter: AtomicU32,
     ready: bool,
@@ -475,7 +476,6 @@ impl EntitySystem {
         EntitySystem { 
             p_entities: entities,
             entity_join_handles:  Arc::new(Mutex::new(Vec::new())),
-            system_status: Arc::new(Mutex::new(StatusCode::INITIALIZE)),
             thread_reciever: Arc::new(Mutex::new(Vec::new())),
             counter: AtomicU32::new(1),
             ready: false,
@@ -492,21 +492,23 @@ impl EntitySystem {
 
     pub unsafe fn processing(p_this: Arc<Mutex<Self>>) -> i32 {
         //println!("Enter loop");
-        loop {
-            let mut this = p_this.lock();
-            let ready = this.ready.clone();
-            drop(this);
-            if ready {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(5));
+        // loop {
+        //     let mut this = p_this.lock();
+        //     let ready = this.ready.clone();
+        //     drop(this);
+        //     if ready {
+        //         break;
+        //     }
+        // }
+        while Env::get_status() != gamesys::StatusCode::RENDER_INIT {
+            std::thread::sleep(Duration::from_millis(5));
         }
+        Env::set_status(gamesys::StatusCode::ENTITY_INIT);
         while !Env::isExit() {
             let mut this = p_this.lock();
             let p_recv = this.thread_reciever.clone();
             let p_entities = this.p_entities.clone();
             let p_ent_join = this.entity_join_handles.clone();
-            let system_status = this.system_status.clone();
             drop(this);
             let mut recv = p_recv.try_lock();
             if let Some(ref mut mutex) = recv {
@@ -526,16 +528,12 @@ impl EntitySystem {
                             let id = ent.entity_id.clone();
                             drop(ent);
                             let mut entities = p_entities.lock();
-                            let mut entity_join_handles = p_ent_join.lock();
+                            //let mut entity_join_handles = p_ent_join.lock();
                             entities.push(entity);
-                            let join_handle = std::thread::Builder::new().name(format!("Entity_{}", id.clone())).spawn(move || {Entity::init(&mut p_entity)}).unwrap();
-                            entity_join_handles.push((id, join_handle));
+                            //let join_handle = std::thread::Builder::new().name(format!("Entity_{}", id.clone())).spawn(move || {Entity::init(&mut p_entity)}).unwrap();
+                            //entity_join_handles.push((id, join_handle));
                             
                         },
-                        ThreadData::Status(status) => {
-                            let mut sys_status = system_status.lock();
-                            *sys_status = status;
-                        }
                         ThreadData::EntityEvent(event) => {
                             let mut entities = p_entities.lock();
                             for pp_entity in entities.to_vec() {
@@ -552,7 +550,13 @@ impl EntitySystem {
             }
             drop(recv);
             //let mut entities = this.entities.clone();
-
+            let mut this = p_this.lock();
+            let mut p_entities = this.p_entities.clone();
+            drop(this);
+            let mut entities = p_entities.lock();
+            for p_entity in entities.as_mut_slice() {
+                Entity::processing(p_entity);
+            }
             // for p_entity in &*entities {
             //     while let Some(event) = EntitySystem::get_event(this) {
             //         let r_entity = p_entity.try_lock().ok();
@@ -624,19 +628,6 @@ impl EntitySystem {
         let p_recv = self.thread_reciever.clone();
         let mut recv = p_recv.lock();
         recv.push(ThreadData::EntityEvent(event));
-    }
-
-    pub fn is_alive(this: &mut Self) -> bool {
-        let p_sys_status = this.system_status.clone();
-        let sys_status = p_sys_status.lock();
-        *sys_status != StatusCode::CLOSE
-    }
-
-    pub fn send_status(p_this: ComponentRef<Self>, status: StatusCode) {
-        let this = p_this.lock();
-        let p_stat = this.system_status.clone();
-        let mut stat = p_stat.lock();
-        stat = stat;
     }
 
     pub fn add_entity(&mut self, params: EntityParams) -> EntityPtr {

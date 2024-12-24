@@ -103,7 +103,7 @@ pub enum ShaderType {
 #[derive(Clone)]
 pub struct ShaderData {
     pub data: Arc<Mutex<Vec<u8>>>,
-    pub compiled_data: Option<Arc<Mutex<Vec<u32>>>>,
+    pub compiled_data: Option<Arc<Mutex<Vec<u8>>>>,
 }
 
 impl ShaderData {
@@ -166,7 +166,7 @@ impl ShaderData {
         let artifact = compiler.compile_into_spirv(temp.as_str(), shader_kind, name.as_str(), "main", Some(&options));
         let temp = artifact.expect("Failed to compile shader!!!");
 
-        self.compiled_data = Some(Arc::new(Mutex::new(temp.as_binary().to_vec())));
+        self.compiled_data = Some(Arc::new(Mutex::new(temp.as_binary_u8().to_vec())));
     }
 
     pub fn infer_shader_type(&mut self) -> ShaderType {
@@ -235,7 +235,7 @@ impl ShaderData {
         let artifact = compiler.compile_into_spirv(std::str::from_utf8(data.as_slice()).expect("Failed to parse shader code!!"), ShaderKind::InferFromSource, &name, "main", Some(&options));
         let temp = artifact.expect("Failed to compile shader!!");
 
-        self.compiled_data = Some(Arc::new(Mutex::new(temp.as_binary().to_vec())));
+        self.compiled_data = Some(Arc::new(Mutex::new(temp.as_binary_u8().to_vec())));
     } 
 }
 
@@ -253,7 +253,8 @@ pub struct ShaderStage {
     pub shader_data: ShaderData,
     pub shader_type: ShaderType,
     pub shader_lang: ShaderLang,
-    pub shader_inout: Vec<(String, ShaderDataTypeClean, ShaderDataHint)>
+    pub shader_inout: Vec<(String, ShaderDataTypeClean, ShaderDataHint)>,
+    pub shader_id: Option<Vec<u32>>,
 }
 impl ShaderStage {
     fn new(shader_name: String, shader_type: ShaderType, shader_lang: ShaderLang, mut shader_data: ShaderData, shader_inout: Vec<(String, ShaderDataTypeClean, ShaderDataHint)>) -> ShaderStage {
@@ -267,7 +268,7 @@ impl ShaderStage {
 
         unsafe {
             
-            ShaderStage {stage_name: shader_name, shader_data: shader_data, shader_type:shader_type, shader_lang:shader_lang,shader_inout:shader_inout}
+            ShaderStage {stage_name: shader_name, shader_data: shader_data, shader_type:shader_type, shader_lang:shader_lang,shader_inout:shader_inout, shader_id: None}
         }
     }
 
@@ -550,7 +551,7 @@ impl AssetResource for Shader {
             let p_render_sys = Env::get_render_sys();
             let mut render_sys = p_render_sys.write();
             let (a, b) = render_sys.registered_shaders[&data.asset_name].clone();
-            shader_data = b;
+                shader_data = b;
             }
             let mut stages: Vec<ShaderStage> = vec![];
             let ext = data.metadata["ext"].clone();
@@ -584,8 +585,8 @@ impl AssetResource for Shader {
                             }
                             else {
                                 let code = token.shader_code.clone();
-                                let code_u32 = code.align_to::<u32>().1;
-                                let shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(token.shader_code.clone())), compiled_data: Some(Arc::new(Mutex::new(code_u32.to_vec()))) };
+                                let _code_u32 = code.align_to::<u32>().1;
+                                let shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(token.shader_code.clone())), compiled_data: Some(Arc::new(Mutex::new(code.to_vec()))) };
                                 stages.push(ShaderStage::new(file_name.clone() + stage_ext, token.shader_type, token.shader_lang.clone(), shader_data, token.shader_inout_datas));
                             }
                         }
