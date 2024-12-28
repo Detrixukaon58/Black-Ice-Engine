@@ -5,6 +5,8 @@ use std::{any::Any, collections::HashMap};
 use std::sync::Arc;
 use parking_lot::*;
 
+use crate::black_ice::common::engine::asset_types::materials::Material;
+use crate::black_ice::common::New;
 use crate::black_ice::common::{angles::*, components::{component_system::*, entity::entity_system::{entity_event::*, *}}, engine::{asset_types::{materials, shader_asset::Shader}, gamesys::*}, matrices::*, mesh::*, transform::Transform, vertex::*};
 use crate::black_ice::common::engine::pipeline::*;
 use colored::*;
@@ -12,7 +14,7 @@ use colored::*;
 
 pub struct MeshComponent {
     mesh: Arc<Mutex<Mesh>>,
-    surface_ids: HashMap<u32, i32>,
+    materials: HashMap<u32, Arc<Mutex<Material>>>,
     layer: u32,
     transform: Transform,
     pub p_entity: EntityPtr,
@@ -70,10 +72,15 @@ impl Constructor<MeshComponent> for MeshComponent {
             mesh = Arc::new(Mutex::new(mesh_file.as_mesh()));
         }
         let layer = definition.get("layer").expect("Failed to get layer!!").as_u32().unwrap();
+
+        // load the materials
+        let material_list = definition.get("materials").expect("Failed to get materials list").as_vector();
+        let mut materials: HashMap<u32, Arc<Mutex<Material>>> = HashMap::new();
+        
         Some(ComponentRef_new(MeshComponent {
             mesh: mesh.clone(), 
-            surface_ids: HashMap::new(),
             layer: layer,
+            materials: materials,
             transform: Transform::new(definition["position"].as_vec3()?, definition["rotation"].as_quat()?, definition["scale"].as_vec3()?),
             p_entity: entity.clone(),
         }))
@@ -86,6 +93,7 @@ impl Constructor<MeshComponent> for MeshComponent {
                         Value::String(String::new())
                     ))
                 )),
+                Value::Component("materials".to_string(), std::sync::Arc::new(Value::Array(Vec::<Value>::new()))),
                 Value::Component("layer".to_string(), std::sync::Arc::new(Value::I32(0))),
                 Value::Component("position".to_string(), std::sync::Arc::new(Value::Vec3(Vec3::new(0.0, 0.0, 0.0)))),
                 Value::Component("rotation".to_string(), std::sync::Arc::new(Value::Quat(Quat::euler(Ang3::new(0.0, 0.0, 0.0))))),
@@ -104,45 +112,78 @@ impl MeshComponent {
             // lets add all the mesh and shader data
             let p_mesh = self.mesh.clone();
             let mesh = p_mesh.lock();
-
-            for (id, p_material) in &mesh.materials {
-                let material = p_material.lock();
+            // load the shader
+            for p_material in &self.materials {
+                let material = p_material.1.lock();
                 let shader = material.shader.clone();
-                
                 RenderPipelineSystem::register_shader(self.layer, shader);
             }
-            
             //println!("{}", "Added Mesh".blue());
         }
     }
-    pub fn update_mesh(&mut self) {
-        let mut mesh = self.mesh.lock();
-        mesh.transform = self.p_entity.get_world_tm() * self.transform.get_world_tm();
+    pub fn update_mesh(&mut self) {        
         // update mesh for the render pipelines
         unsafe{
-
-            for (id, p_material) in &mesh.materials {
+            // now we gotta send the shader data to render
+            let p_mesh = self.mesh.clone();
+            let mut mesh = p_mesh.lock();
+            mesh.transform = self.p_entity.get_world_tm() * self.transform.get_world_tm();
+            for p_surface in &mesh.surfaces {
+                let mut data = vec![Data::Surface(p_surface.clone()), Data::MeshMatrix("_m".to_string(), mesh.transform.clone()), Data::Vector("lol".to_string(), Vec3::new(1.0, 1.0, 1.0)), Data::Matrix("_norm".to_string(), self.transform.get_world_tm())];
+                let surface = p_surface.lock();
+                let id = surface.id.clone();
+                drop(surface);
+                let (di,p_material) = (&self.materials).into_iter().find(|x| {*x.0 == id}).unwrap();
                 let material = p_material.lock();
-                let shader = material.shader.clone();
-                let surface = mesh.surfaces.iter().find(|p_x| { let x = p_x.lock(); x.id==*id}).unwrap().clone();
-                let data = vec![Data::Surface(surface)];
-
-                RenderPipelineSystem::register_shader(self.layer, shader.clone());
-                RenderPipelineSystem::render_shader(self.layer, shader, data);
+                for (name, (p_value, value_type)) in &material.shader_descriptor {
+                    match value_type {
+                        crate::black_ice::common::engine::asset_types::shader_asset::ShaderDataHint::Uniform => {
+                            let value = p_value.lock();
+                            match value.clone(){
+                                crate::black_ice::common::engine::asset_types::shader_asset::ShaderDataType::Integer(i) => todo!(),
+                                crate::black_ice::common::engine::asset_types::shader_asset::ShaderDataType::Boolean(i) => todo!(),
+                                crate::black_ice::common::engine::asset_types::shader_asset::ShaderDataType::UnsignedInteger(i) => todo!(),
+                                crate::black_ice::common::engine::asset_types::shader_asset::ShaderDataType::Float(i) => todo!(),
+                                crate::black_ice::common::engine::asset_types::shader_asset::ShaderDataType::Double(i) => todo!(),
+                                crate::black_ice::common::engine::asset_types::shader_asset::ShaderDataType::Vec3(i) => todo!(),
+                                crate::black_ice::common::engine::asset_types::shader_asset::ShaderDataType::Vec4(i) => todo!(),
+                                crate::black_ice::common::engine::asset_types::shader_asset::ShaderDataType::Vec2(i) => todo!(),
+                                crate::black_ice::common::engine::asset_types::shader_asset::ShaderDataType::IVec3(i) => todo!(),
+                                crate::black_ice::common::engine::asset_types::shader_asset::ShaderDataType::IVec4(i) => todo!(),
+                                crate::black_ice::common::engine::asset_types::shader_asset::ShaderDataType::IVec2(i) => todo!(),
+                                crate::black_ice::common::engine::asset_types::shader_asset::ShaderDataType::UVec3(i) => todo!(),
+                                crate::black_ice::common::engine::asset_types::shader_asset::ShaderDataType::UVec4(i) => todo!(),
+                                crate::black_ice::common::engine::asset_types::shader_asset::ShaderDataType::UVec2(i) => todo!(),
+                                crate::black_ice::common::engine::asset_types::shader_asset::ShaderDataType::DVec3(i) => todo!(),
+                                crate::black_ice::common::engine::asset_types::shader_asset::ShaderDataType::DVec4(i) => todo!(),
+                                crate::black_ice::common::engine::asset_types::shader_asset::ShaderDataType::DVec2(i) => todo!(),
+                                crate::black_ice::common::engine::asset_types::shader_asset::ShaderDataType::Sampler2D(vec, _, _) => todo!(),
+                            }
+                        },
+                        crate::black_ice::common::engine::asset_types::shader_asset::ShaderDataHint::In => todo!(),
+                        crate::black_ice::common::engine::asset_types::shader_asset::ShaderDataHint::Out => todo!(),
+                        crate::black_ice::common::engine::asset_types::shader_asset::ShaderDataHint::InOut => todo!(),
+                        crate::black_ice::common::engine::asset_types::shader_asset::ShaderDataHint::Buffer(_) => todo!(),
+                    }
+                }
+                RenderPipelineSystem::register_shader(self.layer, material.shader.clone());
+                RenderPipelineSystem::render_shader(self.layer, material.shader.clone(), data);
             }
-            
         }
+            
+        
     }
 
     pub fn triangle(&mut self) {
         let mut m = self.mesh.lock();
-        m.triangles();
-        
+        let id = m.triangles();
+        self.materials.insert(id, Arc::new(Mutex::new(Material::new())));
     }
 
     pub fn square(&mut self) {
         let mut m = self.mesh.lock();
-        m.square();
+        let id = m.square();
+        self.materials.insert(id, Arc::new(Mutex::new(Material::new())));
     }
 
     pub fn rotate(&mut self, rotation: Quat)

@@ -1,6 +1,7 @@
 #![allow(unused)]
 
 use std::{any::*, collections::HashMap, option};
+use components::component_system::Constructor;
 use engine::asset_mgr::AssetManager;
 use parking_lot::*;
 use shaderc::ShaderKind;

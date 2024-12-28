@@ -36,6 +36,7 @@ pub enum Value {
     String(String),
     Array(Vec<Value>),
     Component(String, Arc<Value>),
+    Map(u32, Arc<Value>),
     
 }
 
@@ -92,7 +93,7 @@ impl Display for Value {
             Self::String(s) => writeln!(f, "\"{}\"", s),
             Self::Vec3(v) => writeln!(f, "Vec3({x}, {y}, {z})", x=v.x, y=v.y, z=v.z),
             Self::Vec4(v) => writeln!(f, "Vec4({x}, {y}, {z}, {w})", x=v.x, y=v.y, z=v.z, w=v.w),
-            
+            Self::Map(a, p_b) => writeln!(f, "{a}: {value}", value=format!{"{}", p_b})
         }
     }
 }
@@ -188,6 +189,13 @@ impl Value {
     pub fn as_u32(&self) -> Option<u32> {
         match self {
             Value::I32(v) => Some(v.clone() as u32),
+            _ => None
+        }
+    }
+
+    pub fn as_vector(&self) -> Option<Vec<Value>> {
+        match self {
+            Value::Array(v) => Some(v.clone() as Vec<Value>),
             _ => None
         }
     }

@@ -40,7 +40,7 @@ impl BaseComponent for CameraComponent {
             EventFlag::INIT => {
                 self.init();
                 // self.transform.rotate(Quat::euler(Ang3::new(45.0, 0.0, 0.0)));
-                self.transform.set_position(Vec3::new(0.0, 0.0, 1.0));
+                self.transform.set_position(Vec3::new(0.0, 0.0, -1.0));
             },
             EventFlag::UPDATE => {
 
@@ -48,15 +48,15 @@ impl BaseComponent for CameraComponent {
                 let (mut cursor_x, mut cursor_y) = InputSystem::get_cursor();
                 self.test = Ang3::new(self.test.y + cursor_x.change(), self.test.p + (cursor_y.change() * self.test.y.to_radians().cos()), self.test.r + (cursor_y.change() * self.test.y.to_radians().sin()));
                 unsafe {
-                    let previous_rotation = self.transform.rotation.to_euler();
-                    self.transform.set_rotation(Quat::euler(
-                        // Ang3::new(
-                        //     -cursor_x.get_position(),
-                        //     -cursor_y.get_position() * (-cursor_x.get_position()).to_radians().cos(), 
-                        //     -cursor_y.get_position() * (-cursor_x.get_position()).to_radians().sin(), 
-                        // )
-                        self.test
-                    ));
+                    // let previous_rotation = self.transform.rotation.to_euler();
+                    // self.transform.set_rotation(Quat::euler(
+                    //     // Ang3::new(
+                    //     //     -cursor_x.get_position(),
+                    //     //     -cursor_y.get_position() * (-cursor_x.get_position()).to_radians().cos(), 
+                    //     //     -cursor_y.get_position() * (-cursor_x.get_position()).to_radians().sin(), 
+                    //     // )
+                    //     self.test
+                    // ));
                     
                 }
                 //println!("{}. {}", cursor_x.average(),cursor_y.average());

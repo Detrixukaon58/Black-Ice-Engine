@@ -482,126 +482,96 @@ impl EntitySystem {
 
         }
     }
+    pub fn cleanup(p_this: Arc<Mutex<Self>>){
+    }
 
-    pub fn init<'a>(this: Arc<Mutex<Self>>){
+    pub fn init(this: Arc<Mutex<Self>>){
         unsafe{
             //println!("Spawned Entity System!!");
-            Self::processing(this);
+            Env::set_status(gamesys::StatusCode::ENTITY_INIT);
         }
     }
 
     pub unsafe fn processing(p_this: Arc<Mutex<Self>>) -> i32 {
-        //println!("Enter loop");
-        // loop {
-        //     let mut this = p_this.lock();
-        //     let ready = this.ready.clone();
-        //     drop(this);
-        //     if ready {
-        //         break;
-        //     }
-        // }
-        while Env::get_status() != gamesys::StatusCode::RENDER_INIT {
-            std::thread::sleep(Duration::from_millis(5));
-        }
-        Env::set_status(gamesys::StatusCode::ENTITY_INIT);
-        while !Env::isExit() {
-            let mut this = p_this.lock();
-            let p_recv = this.thread_reciever.clone();
-            let p_entities = this.p_entities.clone();
-            let p_ent_join = this.entity_join_handles.clone();
-            drop(this);
-            let mut recv = p_recv.try_lock();
-            if let Some(ref mut mutex) = recv {
-                for th in mutex.as_slice() {
-                    let data = th.clone();
-                    
-                    match data {
-                        ThreadData::Empty => todo!(),
-                        ThreadData::I32(i) => todo!(),
-                        ThreadData::String(s) => todo!(),
-                        ThreadData::Vec(vec) => todo!(),
-                        ThreadData::Vec3(vec3) => todo!(),
-                        ThreadData::Quat(quat) => todo!(),
-                        ThreadData::Entity(entity) => {
-                            let mut p_entity = entity.clone();
-                            let ent = p_entity.lock();
-                            let id = ent.entity_id.clone();
-                            drop(ent);
-                            let mut entities = p_entities.lock();
-                            //let mut entity_join_handles = p_ent_join.lock();
-                            entities.push(entity);
-                            //let join_handle = std::thread::Builder::new().name(format!("Entity_{}", id.clone())).spawn(move || {Entity::init(&mut p_entity)}).unwrap();
-                            //entity_join_handles.push((id, join_handle));
-                            
-                        },
-                        ThreadData::EntityEvent(event) => {
-                            let mut entities = p_entities.lock();
-                            for pp_entity in entities.to_vec() {
-                                let p_entity = pp_entity.clone();
-                                Entity::send_event(p_entity, EventThreadData::Event(event.clone()));
-                                
-                            }
+
+        let mut this = p_this.lock();
+        let p_recv = this.thread_reciever.clone();
+        let p_entities = this.p_entities.clone();
+        let p_ent_join = this.entity_join_handles.clone();
+        drop(this);
+        let mut recv = p_recv.try_lock();
+        if let Some(ref mut mutex) = recv {
+            for th in mutex.as_slice() {
+                let data = th.clone();
+                
+                match data {
+                    ThreadData::Empty => todo!(),
+                    ThreadData::I32(i) => todo!(),
+                    ThreadData::String(s) => todo!(),
+                    ThreadData::Vec(vec) => todo!(),
+                    ThreadData::Vec3(vec3) => todo!(),
+                    ThreadData::Quat(quat) => todo!(),
+                    ThreadData::Entity(entity) => {
+                        let mut p_entity = entity.clone();
+                        let ent = p_entity.lock();
+                        let id = ent.entity_id.clone();
+                        drop(ent);
+                        let mut entities = p_entities.lock();
+                        //let mut entity_join_handles = p_ent_join.lock();
+                        entities.push(entity);
+                        //let join_handle = std::thread::Builder::new().name(format!("Entity_{}", id.clone())).spawn(move || {Entity::init(&mut p_entity)}).unwrap();
+                        //entity_join_handles.push((id, join_handle));
+                        
+                    },
+                    ThreadData::EntityEvent(event) => {
+                        let mut entities = p_entities.lock();
+                        for pp_entity in entities.to_vec() {
+                            let p_entity = pp_entity.clone();
+                            Entity::send_event(p_entity, EventThreadData::Event(event.clone()));
                             
                         }
-                        _ => {},
-                    }
-                }
-                mutex.clear();
-            }
-            drop(recv);
-            //let mut entities = this.entities.clone();
-            let mut this = p_this.lock();
-            let mut p_entities = this.p_entities.clone();
-            drop(this);
-            let mut entities = p_entities.lock();
-            for p_entity in entities.as_mut_slice() {
-                Entity::processing(p_entity);
-            }
-            // for p_entity in &*entities {
-            //     while let Some(event) = EntitySystem::get_event(this) {
-            //         let r_entity = p_entity.try_lock().ok();
-            //         if let Some(entity) = r_entity {
-            //             let entity_id = entity.entity_id.clone();
-            //             drop(entity);
                         
-            //             let p_component_sys = this.component_system.clone();
-            //             let mut component_sys = p_component_sys.lock().unwrap();
-            //             let components = component_sys.entity_get_components(entity_id);
-            //             for pp_component in components {
-            //                 let p_component = pp_component.clone();
-            //                 let component = p_component.lock().unwrap();
-            //                 let event_flags = component.get_event_mask().clone();
-            //                 if(event_flags.contains(event.event_flag)){
-            //                     component.process_event(&event);
-            //                 }
-            //             }
-            //         }
-            //     }
-            // }
-            //println!("dodo");
-            //this.send_event(Event::update_event());
-            // std::thread::sleep(std::time::Duration::from_millis(5));
-        }
-        //println!("Closing Entity System thread!");
-        let mut this = p_this.lock();
-        let mut entities = this.p_entities.lock();
-        for p_entity in entities.to_vec() {
-            let entity = p_entity.lock();
-            let p_recv = entity.thread_reciever.clone();
-            let mut recv = p_recv.lock();
-            recv.insert(0, EventThreadData::KillEvent());
-            drop(recv);
-            
-        }
-        let entity_join_handles = this.entity_join_handles.lock();
-        for handle in entity_join_handles.as_slice() {
-            while !handle.1.is_finished() {
-                std::thread::sleep(std::time::Duration::from_millis(1));
+                    }
+                    _ => {},
+                }
             }
+            mutex.clear();
         }
-        std::thread::sleep(std::time::Duration::from_millis(50));
-        entities.clear();
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        drop(recv);
+        //let mut entities = this.entities.clone();
+        let mut this = p_this.lock();
+        let mut p_entities = this.p_entities.clone();
+        drop(this);
+        let mut entities = p_entities.lock();
+        for p_entity in entities.as_mut_slice() {
+            Entity::processing(p_entity);
+        }
+        // for p_entity in &*entities {
+        //     while let Some(event) = EntitySystem::get_event(this) {
+        //         let r_entity = p_entity.try_lock().ok();
+        //         if let Some(entity) = r_entity {
+        //             let entity_id = entity.entity_id.clone();
+        //             drop(entity);
+                    
+        //             let p_component_sys = this.component_system.clone();
+        //             let mut component_sys = p_component_sys.lock().unwrap();
+        //             let components = component_sys.entity_get_components(entity_id);
+        //             for pp_component in components {
+        //                 let p_component = pp_component.clone();
+        //                 let component = p_component.lock().unwrap();
+        //                 let event_flags = component.get_event_mask().clone();
+        //                 if(event_flags.contains(event.event_flag)){
+        //                     component.process_event(&event);
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
+        //println!("dodo");
+        //this.send_event(Event::update_event());
+        // std::thread::sleep(std::time::Duration::from_millis(5));
+        
+        //println!("Closing Entity System thread!");
         0
     }
 

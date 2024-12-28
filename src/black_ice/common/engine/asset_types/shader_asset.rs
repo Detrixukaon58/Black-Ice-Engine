@@ -66,8 +66,7 @@ pub enum ShaderDataHint {
     In,
     Out,
     InOut,
-    Buffer,
-
+    Buffer(u32/*layout */),
 }
 
 pub type ShaderPtr = usize;
@@ -146,7 +145,7 @@ impl ShaderData {
         let mut data = data_ptr.lock();
         let mut text = std::str::from_utf8(&data).expect("Data is not of proper UTF8 form!!");
         let mut context = ShaderData::include_shaders();
-        let mut temp = context.expand(text).expect("Failed to include neseccary shaders!!");
+        let mut temp_text = context.expand(text).expect("Failed to include neseccary shaders!!");
 
         let mut options = shaderc::CompileOptions::new().expect("Failed to create shader options!!");
         options.set_auto_map_locations(true);
@@ -163,7 +162,7 @@ impl ShaderData {
             ShaderType::Infer => ShaderKind::InferFromSource,
         };
 
-        let artifact = compiler.compile_into_spirv(temp.as_str(), shader_kind, name.as_str(), "main", Some(&options));
+        let artifact = compiler.compile_into_spirv(temp_text.as_str(), shader_kind, name.as_str(), "main", Some(&options));
         let temp = artifact.expect("Failed to compile shader!!!");
 
         self.compiled_data = Some(Arc::new(Mutex::new(temp.as_binary_u8().to_vec())));
@@ -405,7 +404,7 @@ impl Shader {
                                         "In" => ShaderDataHint::In,
                                         "Out" => ShaderDataHint::Out,
                                         "InOut" => ShaderDataHint::InOut,
-                                        "Buffer" => ShaderDataHint::Buffer,
+                                        "Buffer" => ShaderDataHint::Buffer(0),// we need to read the buffer layout
                                         _ => ShaderDataHint::Uniform,
                                     };
 

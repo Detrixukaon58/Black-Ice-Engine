@@ -87,22 +87,14 @@ impl InputSystem {
 
     pub fn init(this: Arc<Mutex<Self>>) -> i32 {
 
-        unsafe {Self::process(this)}
-
+        0
     }
 
-    pub unsafe fn process(p_this: Arc<Mutex<Self>>) -> i32 {
+    pub unsafe fn processing(p_this: Arc<Mutex<Self>>) -> i32 {
 
-        loop {
-            let mut this = p_this.lock();
-            if this.ready {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(5));
-        }
 
-        while !Env::isExit() {
-            
+
+        
             let this = p_this.lock();
             let input_buffer = this.input_buffer.clone();
             let input_event_handlers = this.input_event_handlers.clone();
@@ -115,7 +107,7 @@ impl InputSystem {
             }
 
         
-        }
+        
 
         0
     }
@@ -137,6 +129,9 @@ impl InputSystem {
         }
     }
 
+    pub fn cleanup(p_this: Arc<Mutex<Self>>){
+    }
+
     pub fn get_cursor() -> (Avg<f32>, Avg<f32>) {
         unsafe
         {
@@ -154,12 +149,6 @@ impl InputSystem {
             input.cursor_x.reset();
             input.cursor_y.reset();
         }
-    }
-
-    pub fn start(p_this: Arc<Mutex<Self>>) {
-        let mut this = p_this.lock();
-        //println!("{}", "Starting Input Thread!!".yellow());
-        this.ready = true;
     }
 
 }

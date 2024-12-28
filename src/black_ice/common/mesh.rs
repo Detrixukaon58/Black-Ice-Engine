@@ -35,13 +35,12 @@ pub struct Surface {
 pub struct Mesh {
     pub surfaces: Vec<Arc<Mutex<Surface>>>,
     pub transform: matrices::Matrix34,
-    pub materials: HashMap<u32, Arc<Mutex<Material>>>,
     counter: AtomicU32
 }
 
 impl Mesh {
 
-    pub fn triangles(&mut self) {
+    pub fn triangles(&mut self) -> u32{
         let mut mesh_object = Surface::new("triangle".to_string(), SurfaceType::TRIANGLES);
         
         mesh_object.add_point(Vec3::new(-25.0, -25.0, 0.0));
@@ -56,14 +55,14 @@ impl Mesh {
         mesh_object.add_uv(0, (0.0, 0.0));
         mesh_object.add_uv(1, (0.5, 0.5));
         mesh_object.add_uv(2, (1.0, 0.0));
-        mesh_object.id = self.counter.fetch_add(1, std::sync::atomic::Ordering::Acquire);
-        self.materials.insert(mesh_object.id.clone(), Arc::new(Mutex::new(Material::new())));
+        let id = self.counter.fetch_add(1, std::sync::atomic::Ordering::Acquire);
+        mesh_object.id = id.clone();
         self.surfaces.push(Arc::new(Mutex::new(mesh_object)));
 
-        
+        return id;
     }
 
-    pub fn square(&mut self) {
+    pub fn square(&mut self) -> u32{
         let mut mesh_object = Surface::new("square".to_string(), SurfaceType::TRIANGLES);
         let v = 5.0;
         mesh_object.add_point(Vec3::new(-v, -v, 0.0));
@@ -84,13 +83,14 @@ impl Mesh {
         mesh_object.add_uv(1, (1.0, 0.0));
         mesh_object.add_uv(2, (1.0, 1.0));
         mesh_object.add_uv(3, (0.0, 1.0));
-        mesh_object.id = self.counter.fetch_add(1, std::sync::atomic::Ordering::Acquire);
-        self.materials.insert(mesh_object.id.clone(), Arc::new(Mutex::new(Material::new())));
+        let id = self.counter.fetch_add(1, std::sync::atomic::Ordering::Acquire);
+        mesh_object.id = id.clone();
         self.surfaces.push(Arc::new(Mutex::new(mesh_object)));
+        return id;
     }
 
     pub fn new() -> Self {
-        Self { surfaces: Vec::new(), transform: matrices::Matrix34::identity(), materials: HashMap::new(),counter: AtomicU32::new(0)}
+        Self { surfaces: Vec::new(), transform: matrices::Matrix34::identity(),counter: AtomicU32::new(0)}
     }
 }
 
@@ -348,7 +348,7 @@ impl MeshFile {
     }
 
     pub fn as_mesh(&self) -> Mesh {
-        Mesh { surfaces: self.surfaces.clone(), transform: matrices::Matrix34::identity(), materials: self.materials.clone(), counter: AtomicU32::new(0)}
+        Mesh { surfaces: self.surfaces.clone(), transform: matrices::Matrix34::identity(), counter: AtomicU32::new(0)}
     }
 }
 

@@ -14,6 +14,7 @@ use crate::black_ice::common::{*, mesh::Mesh, components::{component_system::*, 
 use std::sync::Arc;
 use colored::Colorize;
 use engine::asset_mgr::{self, AssetManager};
+use engine::input::Input;
 use parking_lot::*;
 use futures::join;
 use sdl2::*;
@@ -370,120 +371,119 @@ impl Env {
     pub fn init() {
         // Set up thread pool
 
-        let runner = async{
-            // load in our asset folders
-            
-            AssetManager::load_asset_folder("/home/detrix/rust/black-ice/assets".to_string());
-            
-            // we will get the environment while we still can !!
-            // we do not want to constantly own the environment so that other threads can access it safely!!
-            let p_env = Env::get_env();
-            let env = p_env.lock();
+        
+        // load in our asset folders
+        
+        #[cfg(target_os="linux")]AssetManager::load_asset_folder("/home/detrix/rust/black-ice/assets".to_string());
+        #[cfg(target_os="windows")]AssetManager::load_asset_folder("F:/Rust/Program 1/assets".to_string());
+        
+        // we will get the environment while we still can !!
+        // we do not want to constantly own the environment so that other threads can access it safely!!
+        let p_env = Env::get_env();
+        let env = p_env.lock();
 
-            let p_render_sys = env.RENDER_SYS.clone();
-            let p_entity_sys = env.ENTITY_SYS.clone();
-            let p_input_sys = env.INPUT_SYS.clone();
-            let p_event_system = env.EVENT_SYS.clone();
-            let event_join_handdle = std::thread::Builder::new().name("Event".to_string()).spawn(|| {EventSystem::init(p_event_system)}).unwrap();
-            let render_join_handle = std::thread::Builder::new().name(String::from("render")).spawn(|| {RenderPipelineSystem::init(p_render_sys)}).expect("Failed to create render thread!!");
-            let entity_join_handle = std::thread::Builder::new().name(String::from("entity")).spawn(|| {EntitySystem::init(p_entity_sys)}).expect("Failed to start entity thread!!");
-            let input_join_handle = std::thread::Builder::new().name("Input".to_string()).spawn(|| {InputSystem::init(p_input_sys)}).unwrap();
-            let p_ent_sys_2 = env.ENTITY_SYS.clone();
-            let p_rend_sys_2 = env.RENDER_SYS.clone();
-            let p_input_sys_2 = env.INPUT_SYS.clone();
-            let p_event_sys_2 = env.EVENT_SYS.clone();
-            drop(env);
-            drop(p_env);
-            // we need to wait for everything to finish initialising before we do any of this
-            'run: loop {
-                if Env::get_status() == StatusCode::ENTITY_INIT {
-                    unsafe {
-                        Env::set_status(StatusCode::GAMEPLAY_START);
-                    }
-                    break 'run;
-                }
-                std::thread::sleep(std::time::Duration::from_millis(5));
-            }
-            let mut ent_sys_2 = p_ent_sys_2.lock();
-            let mut entity_params = components::entity::entity_system::EntityParams {
-                position: vertex::Vec3::new(0, 0, 0),
-                rotation: angles::Quat::axis_angle(Vec3::new(0.0, 0.0, 0.0), 0.0),
-                scale: vertex::Vec3::new(1.0, 1.0, 1.0),
+        let p_render_sys = env.RENDER_SYS.clone();
+        let p_entity_sys = env.ENTITY_SYS.clone();
+        let p_input_sys = env.INPUT_SYS.clone();
+        let p_event_system = env.EVENT_SYS.clone();
+        let p_ent_sys_2 = env.ENTITY_SYS.clone();
+        let p_rend_sys_2 = env.RENDER_SYS.clone();
+        let p_input_sys_2 = env.INPUT_SYS.clone();
+        let p_event_sys_2 = env.EVENT_SYS.clone();
+        drop(env);
+        drop(p_env);
+        RenderPipelineSystem::init(p_render_sys);
+        EventSystem::init(p_event_system);
+        InputSystem::init(p_input_sys);
+        EntitySystem::init(p_entity_sys);
 
-            };
-            let mut p_entity = ent_sys_2.add_entity(entity_params);
-            let mut entity_params2 = components::entity::entity_system::EntityParams {
-                position: vertex::Vec3::new(0, 0, 0),
-                rotation: angles::Quat::axis_angle(Vec3::new(0.0, 0.0, 0.0), 0.0),
-                scale: vertex::Vec3::new(1.0, 1.0, 1.0),
+        // we need to wait for everything to finish initialising before we do any of this
+        let mut ent_sys_2 = p_ent_sys_2.lock();
+        let mut entity_params = components::entity::entity_system::EntityParams {
+            position: vertex::Vec3::new(0, 0, 0),
+            rotation: angles::Quat::axis_angle(Vec3::new(0.0, 0.0, 0.0), 0.0),
+            scale: vertex::Vec3::new(1.0, 1.0, 1.0),
 
-            };
-            let mut p_entity2 = ent_sys_2.add_entity(entity_params2);
-            drop(ent_sys_2);
-            let def: common::components::component_system::Value = common::components::component_system::ValueBuilder::new().from_str(r#"
-            {
-                "texture": "ASSET:assets/images/nemissa_hitomi.png"
-                
-            }
-            "#).build();
-            //println!("{}", def["image_file"]);
-            p_entity.add_component::<components::entity::image_component::Image>(Arc::new(def));
-            let cam_def = components::entity::camera_component::CameraComponent::default_constuctor_definition();
-            
-
-            let pipe = PipelineParams {name: "Test Pipeline".to_string(), layer: 0};
-
-
-            use mesh::*;
-            let mesh_def = mesh_component::MeshComponent::default_constuctor_definition();
-            unsafe {
-                let pipe_id = RenderPipelineSystem::resgister_pipeline(pipe);
-            }
-            let p_cam = p_entity.add_component::<components::entity::camera_component::CameraComponent>(cam_def);
-            let mut v_p_mesh = Vec::<ComponentRef<mesh_component::MeshComponent>>::new();
-            for i in 0..10 {
-                let mut p_mesh = p_entity2.add_component::<mesh_component::MeshComponent>(mesh_def.clone());
-                let mut mesh = p_mesh.lock();
-                // mesh.triangles();
-                mesh.square();
-                mesh.translate(Vec3::new(15.0 * i as f32, 0.0, 0.0));
-                drop(mesh);
-                v_p_mesh.push(p_mesh);
-            }
-            EntitySystem::start(p_ent_sys_2.clone());
-            RenderPipelineSystem::start(p_rend_sys_2.clone());
-            InputSystem::start(p_input_sys_2.clone());
-            EventSystem::start(p_event_sys_2.clone());
-
-            // here we loop for the events
-
-            let mut p_sdl = RenderPipelineSystem::get_sdl();
-            
-            loop{
-                if unsafe{Env::isExit()} {
-                    break;
-                }
-                // Use this to handle threading in future maybe
-
-                let mut sdl = p_sdl.lock();
-                let mut pp_event_pump = sdl.event_pump();
-                drop(sdl);
-                let mut p_event_pump = pp_event_pump.unwrap();
-                let mut event_pump = p_event_pump.poll_iter();
-                let mut events = event_pump.map(|f| Arc::new(f)).collect::<Vec<Arc<sdl2::event::Event>>>();
-                let mut event_sys = p_event_sys_2.lock();
-                event_sys.send_events(&mut events);
-            }
-
-            
-
-            render_join_handle.join();
-            entity_join_handle.join();
-            input_join_handle.join();
-            //println!("Exiting Game!!");
         };
+        let mut p_entity = ent_sys_2.add_entity(entity_params);
+        let mut entity_params2 = components::entity::entity_system::EntityParams {
+            position: vertex::Vec3::new(0, 0, 0),
+            rotation: angles::Quat::axis_angle(Vec3::new(0.0, 0.0, 0.0), 0.0),
+            scale: vertex::Vec3::new(1.0, 1.0, 1.0),
 
-        futures::executor::block_on(runner);
+        };
+        let mut p_entity2 = ent_sys_2.add_entity(entity_params2);
+        drop(ent_sys_2);
+        let def: common::components::component_system::Value = common::components::component_system::ValueBuilder::new().from_str(r#"
+        {
+            "texture": "ASSET:assets/images/nemissa_hitomi.png"
+            
+        }
+        "#).build();
+        //println!("{}", def["image_file"]);
+        p_entity.add_component::<components::entity::image_component::Image>(Arc::new(def));
+        let cam_def = components::entity::camera_component::CameraComponent::default_constuctor_definition();
+        
+
+        let pipe = PipelineParams {name: "Test Pipeline".to_string(), layer: 0};
+
+
+        use mesh::*;
+        let mesh_def = mesh_component::MeshComponent::default_constuctor_definition();
+        unsafe {
+            let pipe_id = RenderPipelineSystem::resgister_pipeline(pipe);
+        }
+        let p_cam = p_entity.add_component::<components::entity::camera_component::CameraComponent>(cam_def);
+        let mut v_p_mesh = Vec::<ComponentRef<mesh_component::MeshComponent>>::new();
+        for i in 0..10 {
+            let mut p_mesh = p_entity2.add_component::<mesh_component::MeshComponent>(mesh_def.clone());
+            let mut mesh = p_mesh.lock();
+            // mesh.triangles();
+            mesh.square();
+            mesh.translate(Vec3::new(15.0 * i as f32, 0.0, 0.0));
+            drop(mesh);
+            v_p_mesh.push(p_mesh);
+            break;
+        }
+        // here we loop for the events
+
+        let mut p_sdl = RenderPipelineSystem::get_sdl();
+        
+        loop{
+            if unsafe{Env::isExit()} {
+                unsafe{
+                    EntitySystem::cleanup(Env::get_entity_sys().clone());
+                    InputSystem::cleanup(Env::get_input_sys().clone());
+                    EventSystem::cleanup(Env::get_event_sys().clone());
+                    RenderPipelineSystem::cleanup(Env::get_render_sys().clone());
+                }
+                break;
+            }
+            // Use this to handle threading in future maybe
+
+            let mut sdl = p_sdl.lock();
+            let mut pp_event_pump = sdl.event_pump();
+            drop(sdl);
+            let mut p_event_pump = pp_event_pump.unwrap();
+            let mut event_pump = p_event_pump.poll_iter();
+            let mut events = event_pump.map(|f| Arc::new(f)).collect::<Vec<Arc<sdl2::event::Event>>>();
+            let mut event_sys = p_event_sys_2.lock();
+            event_sys.send_events(&mut events);
+            drop(event_sys);
+            // loop through each of these
+            unsafe{
+                RenderPipelineSystem::processing(Env::get_render_sys().clone());
+                EventSystem::processing(Env::get_event_sys().clone());
+                InputSystem::processing(Env::get_input_sys().clone());
+                EntitySystem::processing(Env::get_entity_sys().clone());
+            }
+        }
+
+        // now we must clean everything up!!
+
+        
+        //println!("Exiting Game!!");
+
         
     }
 
@@ -551,6 +551,12 @@ impl Env {
         let mut env = p_env.lock();
         return env.ASSET_MGR.clone()
         
+    }
+
+    pub unsafe fn get_event_sys() -> Arc<Mutex<common::engine::event_system::EventSystem>> {
+        let mut p_env = Env::get_env();
+        let mut env = p_env.lock();
+        return env.EVENT_SYS.clone()
     }
 
     pub fn get_env() -> Arc<Mutex<Env>> {

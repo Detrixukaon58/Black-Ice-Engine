@@ -37,20 +37,13 @@ unsafe impl Send for EventSystem {}
 impl EventSystem {
 
     pub fn init(this:Arc<Mutex<Self>>) -> i32 {
-        unsafe {Self::process(this)}
+       
+       0
     }
 
-    pub unsafe fn process(p_this: Arc<Mutex<Self>>) -> i32 {
+    pub unsafe fn processing(p_this: Arc<Mutex<Self>>) -> i32 {
 
-        loop {
-            let mut this = p_this.lock();
-            if this.ready {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(5));
-        }
-
-        while !Env::isExit() {
+        
             let mut this = p_this.lock();
             let mut event_pump = this.event_pump.clone();
             this.event_pump.clear();
@@ -78,16 +71,22 @@ impl EventSystem {
                         let mut input_sys = p_input_sys.lock();
                         input_sys.cursor_x.push(x as f32);
                         input_sys.cursor_y.push(y as f32);
+                    },
+                    event::Event::KeyDown { timestamp, window_id, keycode, scancode, keymod, repeat } => {
+                        
                     }
                     _ => continue
                 }
             }
-        }
+        
             
         
         
 
         0
+    }
+
+    pub fn cleanup(p_this: Arc<Mutex<Self>>){
     }
 
     pub fn new() -> Self {
@@ -100,12 +99,6 @@ impl EventSystem {
                 ready: false
             }
         }
-    }
-
-    pub fn start(p_this: Arc<Mutex<Self>>) {
-        let mut this = p_this.lock();
-        //println!("{}", "Starting Event Thread!!".yellow());
-        this.ready = true;
     }
 
     pub fn send_events(&mut self, events: &mut Vec<Arc<sdl2::event::Event>>)

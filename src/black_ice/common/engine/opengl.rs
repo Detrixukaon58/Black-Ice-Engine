@@ -2,7 +2,7 @@
 #![allow(unused)]
 
 use core::panic;
-use std::{collections::HashMap, f32::consts::PI, ffi::CStr, fs::File, mem::{size_of, size_of_val}, os::raw::c_void, sync::Arc};
+use std::{collections::HashMap, f32::consts::PI, ffi::{CStr, CString}, fs::File, mem::{size_of, size_of_val}, os::raw::c_void, sync::Arc};
 
 
 use colored::Colorize;
@@ -79,7 +79,7 @@ impl OGlRender for Pipeline {
             let gl = driver.gl.as_ref().unwrap();
             // this is just to ensure if we need things done before the render loop, it is done here
             // itterate through shader folder and find shaders that are needed to be compiled
-
+            println!("error at pipeline init {:?}", gl.GetError());
             drop(p_driver);
             pipeline.is_init = true;
         }
@@ -146,8 +146,8 @@ impl OGlRender for Pipeline {
                         IVector(String, u32),
                         DVectorBuffer(String, u32),
                         DVector(String, u32),
-                        MeshMatrix(String, u32),
-                        Matrix(String, u32)
+                        MeshMatrix(Matrix34, i32, MatrixProjection, i32),
+                        Matrix(Matrix34, i32)
                     }
                     let mut shader_input = p_shader_input.lock();
                     let mut shader_input_clone = shader_input.clone();
@@ -163,7 +163,18 @@ impl OGlRender for Pipeline {
                         }
                         drop(pipe);
 
-                        
+                        // let mut count = 0;
+                        // driver.gl.as_ref().unwrap().GetProgramiv(shader_program.unwrap(), GL_ACTIVE_UNIFORMS, &mut count);
+                        // for i in 0..count {
+                        //     let mut length = 0;
+                        //     let mut size = 0;
+                        //     let mut type_ = GLenum(0);
+                        //     let mut u_name: [u8; 128] = [0;128];
+                        //     let buf_size = 128;
+                        //     driver.gl.as_ref().unwrap().GetActiveUniform(shader_program.unwrap(), i as u32, buf_size, &mut length, &mut size, &mut type_, u_name.as_mut_ptr());
+
+                        //     println!("{:?}", String::from_utf8(u_name.to_vec()).unwrap());
+                        // }
                         
                         // register each data
                         let mut input_data = data.1.clone();
@@ -273,23 +284,24 @@ impl OGlRender for Pipeline {
 
                                 },
                                 Data::MeshMatrix(name, mat) => {
-                                    let location = driver.gl.as_ref().unwrap().GetUniformLocation(shader_program.unwrap(), name.as_ptr());
+                                    let c_name = std::ffi::CString::new(name.clone()).expect("Failed to convert uniform name to CString");
+                                    // for some reason Rust does not add a null terminator to strings when they are being used as pointers
+                                    // This will cause problems if not converted properly for a c based library!!
+                                    let location = driver.gl.as_ref().unwrap().GetUniformLocation(shader_program.unwrap(), c_name.as_ptr() as *const u8);
                                     assert_ne!(location, -1);
-                                    driver.gl.as_ref().unwrap().UniformMatrix4fv(location, 1, GL_FALSE.0 as u8, mat.to_buffer44().as_mut_ptr());
-                                    let _mvp = camera_projection * camera_transform * *mat;
                                     let _mvp_location = driver.gl.as_ref().unwrap().GetUniformLocation(shader_program.unwrap(), "_mvp".as_ptr());
-                                    assert_ne!(_mvp_location, -1);
-                                    driver.gl.as_ref().unwrap().UniformMatrix4fv(_mvp_location, 1, GL_FALSE.0 as u8, _mvp.to_buffer().as_mut_ptr());
+                                    let _mvp = camera_projection * camera_transform * *mat;
+                                    input_uint.push(ConvertedData::MeshMatrix(*mat, location, _mvp, _mvp_location));
                                 },
                                 Data::Matrix(name, mat) => {
-                                    let location = driver.gl.as_ref().unwrap().GetUniformLocation(shader_program.unwrap(), name.as_ptr());
+                                    let c_name = std::ffi::CString::new(name.clone()).expect("Failed to convert uniform name to CString");
+                                    let location = driver.gl.as_ref().unwrap().GetUniformLocation(shader_program.unwrap(), c_name.as_ptr() as *const u8);
                                     assert_ne!(location, -1);
-                                    driver.gl.as_ref().unwrap().UniformMatrix4fv(location, 1, GL_FALSE.0 as u8, mat.to_buffer44().as_mut_ptr());
+                                    input_uint.push(ConvertedData::Matrix(*mat, location));
                                 }
                             }
                         }
                         let gl = driver.gl.as_ref().unwrap();
-                        // lets add the view and projection matrices
                         let _p_location = gl.GetUniformLocation(shader_program.unwrap(), "_p".as_ptr());
                         if _p_location != -1 {
                             // we have a pprojection matrix to add!!
@@ -299,8 +311,8 @@ impl OGlRender for Pipeline {
                         if _v_location != -1 {
                             gl.UniformMatrix4fv(_v_location, 1, GL_FALSE.0 as u8, camera_transform.to_buffer44().as_mut_ptr());
                         }
-
                         gl.UseProgram(shader_program.unwrap());
+                        // lets add the view and projection matrices
                         // now we expose the data to the shader program!!
                         for input in &input_uint {
                             match input {
@@ -310,6 +322,7 @@ impl OGlRender for Pipeline {
                                 ConvertedData::DoubleSequence(_, _) => todo!(),
                                 ConvertedData::ImageSequence(_, _) => todo!(),
                                 ConvertedData::Surface((vao,vbo,ebo),count) => {
+                                    
                                     
                                     gl.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, *ebo);
                                     gl.DrawElements(GL_TRIANGLES, *count as i32, GL_UNSIGNED_INT, 0 as *const _);
@@ -324,11 +337,16 @@ impl OGlRender for Pipeline {
                                 ConvertedData::IVector(_, _) => todo!(),
                                 ConvertedData::DVectorBuffer(_, _) => todo!(),
                                 ConvertedData::DVector(_, _) => todo!(),
-                                ConvertedData::Matrix(name, u) => {
-
+                                ConvertedData::MeshMatrix(mat, location, _mvp, _mvp_location) => {
+                                    
+                                    driver.gl.as_ref().unwrap().UniformMatrix4fv(*location, 1, GL_FALSE.0 as u8, mat.to_buffer44().as_mut_ptr());
+                                    if *_mvp_location != -1 {
+                                        driver.gl.as_ref().unwrap().UniformMatrix4fv(*_mvp_location, 1, GL_FALSE.0 as u8, _mvp.to_buffer().as_mut_ptr());
+                                    }
                                 },
-                                ConvertedData::MeshMatrix(name, u) => {
-
+                                ConvertedData::Matrix(mat, location) => {
+                                    
+                                    driver.gl.as_ref().unwrap().UniformMatrix4fv(*location, 1, GL_FALSE.0 as u8, mat.to_buffer44().as_mut_ptr());
                                 }
                             }
                         }
@@ -344,8 +362,8 @@ impl OGlRender for Pipeline {
                                 ConvertedData::ImageSequence(_, _) => todo!(),
                                 ConvertedData::Surface((vao,vbo,ebo),count) => {
                                     
-                                    gl.DeleteVertexArrays(1, [*vao].as_ptr());
-                                    gl.DeleteBuffers(2, [*vbo,*ebo].as_ptr());
+                                    //gl.DeleteVertexArrays(1, [*vao].as_ptr());
+                                    //gl.DeleteBuffers(2, [*vbo,*ebo].as_ptr());
                                 },
                                 ConvertedData::Float(_, _) => todo!(),
                                 ConvertedData::Integer(_, _) => todo!(),
@@ -357,10 +375,10 @@ impl OGlRender for Pipeline {
                                 ConvertedData::IVector(_, _) => todo!(),
                                 ConvertedData::DVectorBuffer(_, _) => todo!(),
                                 ConvertedData::DVector(_, _) => todo!(),
-                                ConvertedData::Matrix(name, u) => {
+                                ConvertedData::Matrix(mat, location) => {
                                     
                                 },
-                                ConvertedData::MeshMatrix(name, u) => {
+                                ConvertedData::MeshMatrix(mat,location, _mvp, _mvp_location) => {
                                     
                                 }
                             }
@@ -412,23 +430,23 @@ impl DriverValues {
         this.gl = GlFns::load_from(&|f_name| video.gl_get_proc_address(std::ffi::CStr::from_ptr(f_name.cast()).to_str().unwrap()).cast() ).ok();
         let gl = this.gl.as_ref().unwrap();
         gl.ClearColor(0.2, 0.3, 0.3, 1.0);
-        
+        //println!("{:?}", gl.GetError());
         // get all extentions and print them
         let mut extentions: Vec<String> = vec![];
         let mut extention_count: i32 = 0;
         gl.GetIntegerv(GL_NUM_EXTENSIONS, &mut extention_count);
-
+       // println!("{:?}", gl.GetError());
         for i in 0..extention_count {
             let st = gl.GetStringi(GL_EXTENSIONS, i as u32);
             let c_str = CStr::from_ptr(st as *const i8);
             let value = String::from(c_str.to_str().unwrap());
 
-            print!("{}\n", value);
+            //print!("{}\n", value);
             extentions.push(value);
                 
 
         }
-
+        println!("we should only rn this once! {:?}", gl.GetError());
         video.gl_set_swap_interval(sdl2::video::SwapInterval::VSync).expect("Failed to set swap interval!!");
     }
 

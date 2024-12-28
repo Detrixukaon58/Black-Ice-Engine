@@ -2,6 +2,7 @@
 use std::{thread::{Thread, JoinHandle}, any::{Any, TypeId}, sync::{atomic::AtomicBool, Arc}, ops::IndexMut};
 
 use crate::black_ice::common::{vertex::*, angles::*, components::{entity::entity_system::*, component_system::{BaseComponent, ConstructorDefinition}}, engine::*, matrices::*, mesh::Mesh};
+use asset_types::shader_asset::Shader;
 use parking_lot::*;
 use super::pipeline::Camera;
 
@@ -18,6 +19,7 @@ pub enum ThreadData {
     Pipeline(pipeline::PipelineParams),
     EntityEvent(entity_event::Event),
     RenderData(),
+    RegisterShader(i32, u32, Shader),
     Camera(u32, Camera)
 
 }
