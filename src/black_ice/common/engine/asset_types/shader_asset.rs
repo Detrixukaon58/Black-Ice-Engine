@@ -7,11 +7,126 @@ use shaderc::ShaderKind;
 
 use super::AssetResource;
 
-pub trait ShaderDescriptor{
-    fn get_num_values(&self) -> isize;
-    fn get_value_type(&self, offset: isize) -> TypeId;
-    fn get_value(&self, offset: isize) -> Ptr<Box<&'static dyn Base>>;
-    fn get_value_name(&self, offset: isize) -> String;
+#[derive(Clone, PartialEq)]
+pub struct StructDescriptor {
+    pub name: String,
+    pub members: Vec<VariableDescriptorEnum>,
+    pub binding: u32,
+}
+#[derive(Clone, PartialEq)]
+pub struct VariableDescriptor {
+    pub name: String,
+    pub offset: u32,
+    pub binding: u32,
+
+}
+
+#[derive(Clone, PartialEq)]
+pub enum VariableDescriptorEnum {
+    Variable (VariableDescriptor),
+    Struct (StructDescriptor),
+    NoVar
+}
+#[derive(Clone, Default)]
+pub struct ShaderStageDescriptor {
+    pub data: Vec<VariableDescriptorEnum>
+}
+
+
+impl ShaderStageDescriptor {
+
+    pub fn get(&self, name: String) -> VariableDescriptorEnum {
+        let name_split = name.split('.');
+        let mut var: VariableDescriptorEnum = VariableDescriptorEnum::NoVar;
+        for split in name_split {
+            var = match &mut var {
+                VariableDescriptorEnum::NoVar=> {
+                    // we need to select the first var we want
+                    let dat = self.data.clone();
+                    let val = dat.into_iter().find(|x| {
+                        match x {
+                            VariableDescriptorEnum::Variable(variable_descriptor) => variable_descriptor.name == split,
+                            VariableDescriptorEnum::Struct(struct_descriptor) => struct_descriptor.name == split,
+                            VariableDescriptorEnum::NoVar => false,
+                        }
+                    }).unwrap_or(VariableDescriptorEnum::NoVar).clone();
+                    if val == VariableDescriptorEnum::NoVar {
+                        return VariableDescriptorEnum::NoVar;
+                    }
+                    else{
+                        val
+                    }
+                },
+                VariableDescriptorEnum::Struct(struct_descriptor) => {
+                    let val = struct_descriptor.members.clone().into_iter().find(|x| {
+                        match x {
+                            VariableDescriptorEnum::Variable(variable_descriptor) => variable_descriptor.name == split,
+                            VariableDescriptorEnum::Struct(struct_descriptor) => struct_descriptor.name == split,
+                            VariableDescriptorEnum::NoVar => false,
+                        }
+                    }).unwrap_or(VariableDescriptorEnum::NoVar).clone();
+                    if val == VariableDescriptorEnum::NoVar {
+                        return VariableDescriptorEnum::NoVar;
+                    }
+                    else{
+                        val
+                    }
+                },
+                VariableDescriptorEnum::Variable(variable_descriptor) => {
+                    if variable_descriptor.name == split {
+                        break;
+                    }
+                    else{
+                        return VariableDescriptorEnum::NoVar;
+                    }
+                }
+            };
+        }
+        return var;
+    }
+
+    pub fn get_binding(&self, name: String) -> i32 {
+        let value = self.get(name);
+        match value {
+            VariableDescriptorEnum::Variable(variable_descriptor) => variable_descriptor.binding as i32,
+            VariableDescriptorEnum::Struct(struct_descriptor) => struct_descriptor.binding as i32,
+            VariableDescriptorEnum::NoVar => -1,
+        }
+    }
+
+    pub fn append(&mut self, other: &mut Self) {
+        self.data.append(&mut other.data);
+    }
+
+    pub fn insert(&mut self, var: VariableDescriptorEnum) {
+        self.data.push(var);
+    }
+
+    pub fn insert_variable(&mut self, var_name: String, var_offset: u32, var_binding: u32) {
+        self.data.push(
+            VariableDescriptorEnum::Variable(
+                VariableDescriptor { name: var_name, offset: var_offset, binding: var_binding }
+            )
+        );
+    }
+
+    // fn recurse_variable(block: ReflectBlockVariable) -> VariableDescriptorEnum {
+    //     match block.type_description {
+    //         Some(t) => {
+    //             match t {
+
+    //             }
+    //         },
+    //         None => {
+
+    //         }
+    //     }
+    // }
+
+    pub fn new() -> Self {
+        Self { data: Vec::new() }
+    }
+
 }
 
 #[derive(Clone)]
@@ -38,26 +153,99 @@ pub enum ShaderDataType {
 }
 
 #[derive(Clone)]
-pub enum ShaderDataTypeClean {
-    Integer,
-    Boolean,
-    UnsignedInteger,
-    Float,
-    Double,
-    Vec3,
-    Vec4,
-    Vec2,
-    IVec3,
-    IVec4,
-    IVec2,
-    UVec3,
-    UVec4,
-    UVec2,
-    DVec3,
-    DVec4,
-    DVec2,
-    Sampler2D,
+pub enum ImageFormat {
+    Unknown ,
+    Rgba32f ,
+    Rgba16f ,
+    R32f ,
+    Rgba8 ,
+    Rgba8Snorm ,
+    Rg32f ,
+    Rg16f ,
+    R11fG11fB10f ,
+    R16f ,
+    Rgba16 ,
+    Rgb10A2 ,
+    Rg16 ,
+    Rg8 ,
+    R16 ,
+    R8 ,
+    Rgba16Snorm ,
+    Rg16Snorm ,
+    Rg8Snorm ,
+    R16Snorm ,
+    R8Snorm ,
+    Rgba32i ,
+    Rgba16i ,
+    Rgba8i ,
+    R32i ,
+    Rg32i ,
+    Rg16i ,
+    Rg8i ,
+    R16i ,
+    R8i ,
+    Rgba32ui ,
+    Rgba16ui ,
+    Rgba8ui ,
+    R32ui ,
+    Rgb10a2ui ,
+    Rg32ui ,
+    Rg16ui ,
+    Rg8ui ,
+    R16ui ,
+    R8ui ,
+    R64ui ,
+    R64i ,
+}
 
+#[derive(Clone)]
+pub enum DataType {
+    I64,
+    I32,
+    I16,
+    I8,
+    U64,
+    U32,
+    U16,
+    U8,
+    Double,
+    F32,
+    F16,
+    F8,
+    Boolean,
+    IVec4 { bits: u32},
+    IVec3 { bits: u32},
+    IVec2 { bits: u32},
+    UVec4 { bits: u32},
+    UVec3 { bits: u32},
+    UVec2 { bits: u32},
+    DVec4,// these aren't used, but must be kept for future proofing
+    DVec3,
+    DVec2,
+    Vec4 { bits: u32},
+    Vec3 { bits: u32},
+    Vec2 { bits: u32},
+    BVec3,
+    BVec4,
+    BVec2,
+    FMatrix4 { bits: u32,  row_major: bool,  stride: usize},
+    FMatrix3 { bits: u32,  row_major: bool,  stride: usize},
+    FMatrix2 { bits: u32,  row_major: bool,  stride: usize},
+    IMatrix4 { bits: u32,  row_major: bool,  stride: usize},
+    IMatrix3 { bits: u32,  row_major: bool,  stride: usize},
+    IMatrix2 { bits: u32,  row_major: bool,  stride: usize},
+    UMatrix4 { bits: u32,  row_major: bool,  stride: usize},
+    UMatrix3 { bits: u32,  row_major: bool,  stride: usize},
+    UMatrix2 { bits: u32,  row_major: bool,  stride: usize},
+    BMatrix4 { bits: u32,  row_major: bool,  stride: usize},
+    BMatrix3 { bits: u32,  row_major: bool,  stride: usize},
+    BMatrix2 { bits: u32,  row_major: bool,  stride: usize},
+    Sampler1D { depth: u32,  bit_depth: u32,  is_signed: bool,  is_float: bool,  format: ImageFormat},
+    Sampler2D { depth: u32,  bit_depth: u32,  is_signed: bool,  is_float: bool,  format: ImageFormat},
+    Sampler3D { depth: u32,  bit_depth: u32,  is_signed: bool,  is_float: bool,  format: ImageFormat},
+    SamplerCube { depth: u32,  bit_depth: u32,  is_signed: bool,  is_float: bool,  format: ImageFormat},
+    SamplerRect { depth: u32,  bit_depth: u32,  is_signed: bool,  is_float: bool,  format: ImageFormat},
+    Void
 }
 
 #[derive(Clone)]
@@ -66,7 +254,7 @@ pub enum ShaderDataHint {
     In,
     Out,
     InOut,
-    Buffer(u32/*layout */),
+    Buffer {layout:u32},
 }
 
 pub type ShaderPtr = usize;
@@ -82,7 +270,7 @@ struct ShaderToken {
     pub shader_name: String,
     pub shader_type: ShaderType,
     pub shader_lang: ShaderLang,
-    pub shader_inout_datas: Vec<(String, ShaderDataTypeClean, ShaderDataHint)>,
+    pub shader_inout_datas: Vec<(String, DataType, ShaderDataHint)>,
     pub shader_code: Vec<u8>,
     pub is_compiled: bool,
 
@@ -103,6 +291,7 @@ pub enum ShaderType {
 pub struct ShaderData {
     pub data: Arc<Mutex<Vec<u8>>>,
     pub compiled_data: Option<Arc<Mutex<Vec<u8>>>>,
+    pub descriptor: ShaderStageDescriptor,
 }
 
 impl ShaderData {
@@ -117,7 +306,7 @@ impl ShaderData {
 
             let p_render_sys = Env::get_render_sys();
             let render_sys = p_render_sys.read();
-            for (shader_name, (asset_path, data)) in &render_sys.registered_shaders {
+            for (shader_name, (_asset_path, data)) in &render_sys.registered_shaders {
                 // we will now need to load each shader that can be imported!!
                 
                 context.include(shader_name, &String::from_utf8(data.clone()).unwrap());
@@ -139,13 +328,13 @@ impl ShaderData {
         return context;
     }
 
-    pub fn compile(&mut self, shader_type: ShaderType, shader_lang: ShaderLang, name: String){
+    pub fn compile(&mut self, shader_type: ShaderType, _shader_lang: ShaderLang, name: String){
         let compiler = shaderc::Compiler::new().expect("Failed to init shaderc!!");
-        let mut data_ptr = self.data.clone();
-        let mut data = data_ptr.lock();
-        let mut text = std::str::from_utf8(&data).expect("Data is not of proper UTF8 form!!");
-        let mut context = ShaderData::include_shaders();
-        let mut temp_text = context.expand(text).expect("Failed to include neseccary shaders!!");
+        let data_ptr = self.data.clone();
+        let data = data_ptr.lock();
+        let text = std::str::from_utf8(&data).expect("Data is not of proper UTF8 form!!");
+        let context = ShaderData::include_shaders();
+        let temp_text = context.expand(text).expect("Failed to include neseccary shaders!!");
 
         let mut options = shaderc::CompileOptions::new().expect("Failed to create shader options!!");
         options.set_auto_map_locations(true);
@@ -154,17 +343,55 @@ impl ShaderData {
         
         #[cfg(feature = "opengl")] options.set_target_env(shaderc::TargetEnv::OpenGL, shaderc::EnvVersion::OpenGL4_5 as u32);
         #[cfg(feature = "vulkan")] options.set_target_env(shaderc::TargetEnv::Vulkan, shaderc::EnvVersion::Vulkan1_0 as u32);
-
+        
         let shader_kind = match shader_type {
             ShaderType::Compute => ShaderKind::Compute,
             ShaderType::Fragment => ShaderKind::Fragment,
             ShaderType::Vertex => ShaderKind::Vertex,
             ShaderType::Infer => ShaderKind::InferFromSource,
         };
-
+        
         let artifact = compiler.compile_into_spirv(temp_text.as_str(), shader_kind, name.as_str(), "main", Some(&options));
         let temp = artifact.expect("Failed to compile shader!!!");
+        
 
+        // lets get the shader variable info!!
+        // let module = ShaderModule::load_u8_data(d.as_slice()).expect("Failed to load spirv binary. implementation must be wrong.");
+        // let uniforms = module.enumerate_descriptor_bindings(None).expect("Failed to get uniform bindings");
+        // for uniform in uniforms {
+        //     let _type = uniform.descriptor_type;
+
+        // }
+        let module = spirv_cross::spirv::Module::from_words(temp.as_binary());
+        let ast = spirv_cross::spirv::Ast::<spirv_cross::glsl::Target>::parse(&module).unwrap();
+        let resources = ast.get_shader_resources().unwrap();
+        for uniform in resources.uniform_buffers {
+            let name = uniform.name.clone();
+            let id = uniform.id.clone();
+            let binding = ast.get_decoration(id.clone(), spirv_cross::spirv::Decoration::Binding).unwrap();
+            let _type = ast.get_type(uniform.base_type_id).unwrap_or(spirv_cross::spirv::Type::Void);
+            match _type {
+                spirv_cross::spirv::Type::Struct { member_types, array: _ } => {
+                    let member_count = member_types.len() as u32;
+                    let mut members: Vec<VariableDescriptorEnum> = vec![];
+                    for index in 0..member_count {
+                        let member_name = ast.get_member_name(uniform.base_type_id.clone(), index).unwrap();
+                        let member_offset = ast.get_member_decoration(id.clone(), index, spirv_cross::spirv::Decoration::Offset).unwrap();
+                        let member_binding = ast.get_member_decoration(id.clone(), index, spirv_cross::spirv::Decoration::Binding).unwrap();
+
+                        members.push(VariableDescriptorEnum::Variable(VariableDescriptor { name: member_name, offset: member_offset, binding: member_binding }));
+                    }
+                    self.descriptor.insert(VariableDescriptorEnum::Struct(StructDescriptor { name: name, members: members, binding: binding }));
+                }
+                _ => {
+                    let offset = ast.get_decoration(id.clone(), spirv_cross::spirv::Decoration::Offset).unwrap();
+
+                    self.descriptor.insert_variable(name, offset, binding);
+                }
+            }
+
+        }
+        
         self.compiled_data = Some(Arc::new(Mutex::new(temp.as_binary_u8().to_vec())));
     }
 
@@ -252,11 +479,11 @@ pub struct ShaderStage {
     pub shader_data: ShaderData,
     pub shader_type: ShaderType,
     pub shader_lang: ShaderLang,
-    pub shader_inout: Vec<(String, ShaderDataTypeClean, ShaderDataHint)>,
+    pub shader_inout: Vec<(String, DataType, ShaderDataHint)>,
     pub shader_id: Option<Vec<u32>>,
 }
 impl ShaderStage {
-    fn new(shader_name: String, shader_type: ShaderType, shader_lang: ShaderLang, mut shader_data: ShaderData, shader_inout: Vec<(String, ShaderDataTypeClean, ShaderDataHint)>) -> ShaderStage {
+    fn new(shader_name: String, shader_type: ShaderType, shader_lang: ShaderLang, mut shader_data: ShaderData, shader_inout: Vec<(String, DataType, ShaderDataHint)>) -> ShaderStage {
         
         let shader_kind = match (shader_type) {
             ShaderType::Fragment => shaderc::ShaderKind::Fragment,
@@ -367,7 +594,7 @@ impl Shader {
                             b"true" => true,
                             _ => false,
                         };
-                        let mut inout_datas: Vec<(String, ShaderDataTypeClean, ShaderDataHint)> = vec![];
+                        let mut inout_datas: Vec<(String, DataType, ShaderDataHint)> = vec![];
                         if data_list.contains_key("shader_inout_datas") {
                             let temp = data_list.get("shader_inout_datas").expect("No such value shader_inout_datas!!").clone().as_vec();
                             for val in temp 
@@ -379,32 +606,32 @@ impl Shader {
                                     
                                     let name = temp_list[0].to_string();
                                     let data_type = match temp_list[1] {
-                                        "Integer" => ShaderDataTypeClean::Integer,
-                                        "Boolean" => ShaderDataTypeClean::Boolean,
-                                        "UnssignedInteger" => ShaderDataTypeClean::UnsignedInteger,
-                                        "Float" => ShaderDataTypeClean::Float,
-                                        "Double" => ShaderDataTypeClean::Double,
-                                        "Vec3" => ShaderDataTypeClean::Vec3,
-                                        "Vec4" => ShaderDataTypeClean::Vec4,
-                                        "Vec2" => ShaderDataTypeClean::Vec2,
-                                        "IVec3" => ShaderDataTypeClean::IVec3,
-                                        "IVec4" => ShaderDataTypeClean::IVec4,
-                                        "IVec2" => ShaderDataTypeClean::IVec2,
-                                        "UVec3" => ShaderDataTypeClean::UVec3,
-                                        "UVec4" => ShaderDataTypeClean::UVec4,
-                                        "UVec2" => ShaderDataTypeClean::UVec2,
-                                        "DVec3" => ShaderDataTypeClean::Vec3,
-                                        "DVec4" => ShaderDataTypeClean::Vec4,
-                                        "DVec2" => ShaderDataTypeClean::Vec2,
-                                        "Sampler2D" => ShaderDataTypeClean::Sampler2D,
-                                        _ => ShaderDataTypeClean::Float,
+                                        "Integer" => DataType::I32,
+                                        "Boolean" => DataType::Boolean,
+                                        "UnssignedInteger" => DataType::U32,
+                                        "Float" => DataType::F32,
+                                        "Double" => DataType::Double,
+                                        "Vec3" => DataType::Vec3 {bits: 32},
+                                        "Vec4" => DataType::Vec4 {bits: 32},
+                                        "Vec2" => DataType::Vec2 {bits: 32},
+                                        "IVec3" => DataType::IVec3 {bits: 32},
+                                        "IVec4" => DataType::IVec4 {bits: 32},
+                                        "IVec2" => DataType::IVec2 {bits: 32},
+                                        "UVec3" => DataType::UVec3 {bits: 32},
+                                        "UVec4" => DataType::UVec4 {bits: 32},
+                                        "UVec2" => DataType::UVec2 {bits: 32},
+                                        "DVec3" => DataType::Vec3 {bits: 32},
+                                        "DVec4" => DataType::Vec4 {bits: 32},
+                                        "DVec2" => DataType::Vec2 {bits: 32},
+                                        "Sampler2D" => DataType::Sampler2D { depth: 4, bit_depth: 32, is_signed: true, is_float: true, format: ImageFormat::Rgba32f },
+                                        _ => DataType::F32,
                                     };
                                     let data_hint = match temp_list[2] {
                                         "Uniform" => ShaderDataHint::Uniform,
                                         "In" => ShaderDataHint::In,
                                         "Out" => ShaderDataHint::Out,
                                         "InOut" => ShaderDataHint::InOut,
-                                        "Buffer" => ShaderDataHint::Buffer(0),// we need to read the buffer layout
+                                        "Buffer" => ShaderDataHint::Buffer { layout: 0 },// we need to read the buffer layout
                                         _ => ShaderDataHint::Uniform,
                                     };
 
@@ -578,14 +805,14 @@ impl AssetResource for Shader {
                                 ShaderLang::Pssl => stage_ext = ".pfx",
                             }
                             if !token.is_compiled {
-                                let mut shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(token.shader_code.clone())), compiled_data: None };
+                                let mut shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(token.shader_code.clone())), compiled_data: None , descriptor: ShaderStageDescriptor::default()};
                                 shader_data.compile(token.shader_type.clone(), token.shader_lang.clone(), file_name.clone() + stage_ext);
                                 stages.push(ShaderStage::new(file_name.clone() + stage_ext, token.shader_type, token.shader_lang.clone(), shader_data, token.shader_inout_datas));
                             }
                             else {
                                 let code = token.shader_code.clone();
                                 let _code_u32 = code.align_to::<u32>().1;
-                                let shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(token.shader_code.clone())), compiled_data: Some(Arc::new(Mutex::new(code.to_vec()))) };
+                                let shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(token.shader_code.clone())), compiled_data: Some(Arc::new(Mutex::new(code.to_vec()))), descriptor: ShaderStageDescriptor::default() };
                                 stages.push(ShaderStage::new(file_name.clone() + stage_ext, token.shader_type, token.shader_lang.clone(), shader_data, token.shader_inout_datas));
                             }
                         }
@@ -593,56 +820,56 @@ impl AssetResource for Shader {
                     "vert" => {
                         //parse as single stage
                         let mut vec = shader_data.clone();
-                        let mut shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(vec)), compiled_data: None };
+                        let mut shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(vec)), compiled_data: None, descriptor: ShaderStageDescriptor::default() };
                         shader_data.compile(ShaderType::Vertex, ShaderLang::Glsl, file_stem.clone());
                         stages.push(ShaderStage::new(file_stem.clone(), ShaderType::Vertex, ShaderLang::Glsl, shader_data, vec![]));
                     },
                     "frag" => {
                         //parse as single stage
                         let mut vec = &shader_data;
-                        let mut shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(vec.clone())), compiled_data: None };
+                        let mut shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(vec.clone())), compiled_data: None, descriptor: ShaderStageDescriptor::default() };
                         shader_data.compile(ShaderType::Fragment, ShaderLang::Glsl, file_stem.clone());
                         stages.push(ShaderStage::new(file_stem.clone(), ShaderType::Fragment, ShaderLang::Glsl, shader_data, vec![]));
                     },
                     "glsl" => {
                         //parse as single stage
                         let mut vec = &shader_data;
-                        let mut shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(vec.clone())), compiled_data: None };
+                        let mut shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(vec.clone())), compiled_data: None, descriptor: ShaderStageDescriptor::default() };
                         shader_data.compile(ShaderType::Infer, ShaderLang::Glsl, file_stem.clone());
                         stages.push(ShaderStage::new(file_stem.clone(), ShaderType::Infer, ShaderLang::Glsl, shader_data, vec![]));
                     },
                     "comp" => {
                         //parse as single stage
                         let mut vec = &shader_data;
-                        let mut shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(vec.clone())), compiled_data: None };
+                        let mut shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(vec.clone())), compiled_data: None, descriptor: ShaderStageDescriptor::default() };
                         shader_data.compile(ShaderType::Compute, ShaderLang::Glsl, file_stem.clone());
                         stages.push(ShaderStage::new(file_stem.clone(), ShaderType::Compute, ShaderLang::Glsl, shader_data, vec![]));
                     },
                     "hlsl" => {
                         //parse as single stage
                         let mut vec = &shader_data;
-                        let mut shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(vec.clone())), compiled_data: None };
+                        let mut shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(vec.clone())), compiled_data: None, descriptor: ShaderStageDescriptor::default() };
                         shader_data.hlsl_compile(file_stem.clone());
                         stages.push(ShaderStage::new(file_stem.clone(), ShaderType::Infer, ShaderLang::Hlsl, shader_data, vec![]));
                     },
                     "fx" => {
                         //parse as single stage
                         let mut vec = &shader_data;
-                        let mut shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(vec.clone())), compiled_data: None };
+                        let mut shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(vec.clone())), compiled_data: None, descriptor: ShaderStageDescriptor::default() };
                         shader_data.hlsl_compile(file_stem.clone());
                         stages.push(ShaderStage::new(file_stem.clone(), ShaderType::Infer, ShaderLang::Hlsl, shader_data, vec![]));
                     },
                     "pfx" => {
                         //parse as single stage
                         let mut vec = &shader_data;
-                        let mut shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(vec.clone())), compiled_data: None };
+                        let mut shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(vec.clone())), compiled_data: None, descriptor: ShaderStageDescriptor::default() };
                         stages.push(ShaderStage::new(file_stem.clone(), ShaderType::Infer, ShaderLang::Pssl, shader_data, vec![]));
                         panic!("Unimplemented!");
                     },
                     "gdshad" => {
                         //parse as single stage
                         let mut vec = &shader_data;
-                        let mut shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(vec.clone())), compiled_data: None };
+                        let mut shader_data: ShaderData = ShaderData { data: Arc::new(Mutex::new(vec.clone())), compiled_data: None, descriptor: ShaderStageDescriptor::default() };
                         stages.push(ShaderStage::new(file_stem.clone(), ShaderType::Infer, ShaderLang::GodotShader, shader_data, vec![]));
                         panic!("Unimplemented!!");
                     }

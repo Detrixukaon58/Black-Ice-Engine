@@ -38,6 +38,7 @@ openal = {version = "*"}
 libloading = "*"
 fancy-regex = "*"
 flate2 = {version = "*"}
+spirv_cross = {version = "*", features = ["glsl"]}
 
 [features]
 vulkan = ["dep:ash", "dep:ash-window", "sdl2/raw-window-handle"]

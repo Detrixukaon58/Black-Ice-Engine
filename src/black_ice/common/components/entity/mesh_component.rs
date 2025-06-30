@@ -129,7 +129,11 @@ impl MeshComponent {
             let mut mesh = p_mesh.lock();
             mesh.transform = self.p_entity.get_world_tm() * self.transform.get_world_tm();
             for p_surface in &mesh.surfaces {
-                let mut data = vec![Data::Surface(p_surface.clone()), Data::MeshMatrix("_m".to_string(), mesh.transform.clone()), Data::Vector("lol".to_string(), Vec3::new(1.0, 1.0, 1.0)), Data::Matrix("_norm".to_string(), self.transform.get_world_tm())];
+                let mut data = vec![
+                    Data::Surface(p_surface.clone()), 
+                    Data::MeshMatrix("EngineMatrices._model".to_string(), mesh.transform.clone()), 
+                    Data::Matrix("EngineMatrices._norm".to_string(), self.transform.rotation.to_mat33().to_mat34())
+                ];
                 let surface = p_surface.lock();
                 let id = surface.id.clone();
                 drop(surface);
@@ -163,7 +167,7 @@ impl MeshComponent {
                         crate::black_ice::common::engine::asset_types::shader_asset::ShaderDataHint::In => todo!(),
                         crate::black_ice::common::engine::asset_types::shader_asset::ShaderDataHint::Out => todo!(),
                         crate::black_ice::common::engine::asset_types::shader_asset::ShaderDataHint::InOut => todo!(),
-                        crate::black_ice::common::engine::asset_types::shader_asset::ShaderDataHint::Buffer(_) => todo!(),
+                        crate::black_ice::common::engine::asset_types::shader_asset::ShaderDataHint::Buffer {layout} => todo!(),
                     }
                 }
                 RenderPipelineSystem::register_shader(self.layer, material.shader.clone());

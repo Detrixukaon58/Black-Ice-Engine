@@ -137,8 +137,8 @@ impl CameraComponent {
                 let height = window_y as f32;
                 let depth = 1000.0;
                 let ratio = width / height;
-                // self.projection.ortho_projection(- width / 2.0, width / 2.0, height/ 2.0, -height/ 2.0, -depth / 2.0, depth / 2.0);
-                self.projection.perpective_projection(width/height, 75.0, 0.1, depth);
+                self.projection.ortho_projection(- width / 2.0, width / 2.0, height/ 2.0, -height/ 2.0, -depth / 2.0, depth / 2.0);
+                // self.projection.perpective_projection(width/height, 75.0, 0.1, depth);
                 // self.projection = MatrixProjection::identity();
             }
             InputSystem::reset_cursor();
